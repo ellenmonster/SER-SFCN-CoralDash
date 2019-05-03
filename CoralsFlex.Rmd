@@ -1,0 +1,970 @@
+---
+title: "SFCN Coral Reefs"
+output:
+  flexdashboard::flex_dashboard:
+    vertical_layout: scroll
+    orientation: columns
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+# (TO BEGIN) MAKE SURE THESE PACKAGES ARE INSTALLED AND UPDATED (note from June 2018) <<<<< -----
+# Remove the commenting (hashtag), then paste in console and execute. Will not work if you just remove the commenting and run the .Rmd script.
+
+# THESE SHOULD BE INSTALLED (IF ALREADY INSTALLED, MAKE SURE IT'S UPDATED AT LEAST TO THE SPECIFIED VERSION)
+# install.packages("flexdashboard") # v.0.5.1
+# install.packages("shiny") # v.1.1.0
+# install.packages("leaflet") # v.2.0.1
+# install.packages("knitr") # v.1.20
+# install.packages("rmarkdown") # v.1.10
+# install.packages("rtf") # v.0.4.13
+# install.packages("gridExtra") # v.2.3
+# install.packages("shinyWidgets") # v.0.4.3
+# install.packages("tidyverse") # v.1.2.1
+# install.packages("leaflet.minicharts") # v.0.5.4
+
+# THESE SHOULD BE UPDATED VIA GITHUB, WHICH HAS A MORE RECENT VERSION THAN CRAN (AS OF JUNE 2018)
+# library(devtools)
+# devtools::install_github("hadley/multidplyr") # v.0.0.0.9000 (as of June 2018, not available from CRAN)
+# devtools::install_github("hadley/ggplot2") # v.2.2.1.9000
+# devtools::install_github("ramnathv/htmlwidgets") # v.1.2.1
+# devtools::install_github("ropensci/plotly") # v.4.7.1.9000
+# (END) MAKE SURE PACKAGES ARE INSTALLED AND UPDATED <<<<< -----
+
+rm(list=ls())
+
+### Load libraries -----
+# Will automatically install any libraries it can't find
+packages <- c("flexdashboard", "shiny", "knitr", "gridExtra", "shinyWidgets", "leaflet", "plotly", "DT", "parallel", "rtf", "lubridate", "leaflet.minicharts", "multidplyr", "tidyverse", "htmlwidgets")
+package.check <- lapply(packages, FUN = function(x) {
+  if (!require(x, character.only = TRUE)) {
+    install.packages(x, dependencies = TRUE, repos = "http://cran.us.r-project.org")
+    library(x, character.only = TRUE)
+  }
+})
+
+options(shiny.maxRequestSize = 20*1024^2) # allows data files up to 20 MB to be imported
+opts_chunk$set(root.dir = getwd())
+source("Corals.R")
+```
+
+Import
+======================================
+Column {data-width=525}
+-------------------------------------
+#### Instructions for processing a raw data file (jump to Step 6 if you already have a summary RDS file)
+
+1. Create a CSV file that summarizes the coral data by transect with these required columns (case-sensitive): *BleachingCode, Category, CountOfTaxonCode, Date, FunctionalGroup, Latitude, Longitude, ParkCode, Purpose, Site, SubCategory, TaxonCode, Transect, TripName, Year*
+
+2. For parallel (faster) processing, select the number of cores to use. Default is one less than the maximum number of cores detected on your computer.
+
+3. Enter a prefix to append to the output summary file.
+
+4. Browse to and upload the raw coral data file (CSV).
+
+5. When data processing is completed, a summary data file will be output to the current working directory as an RDS with the name '(your prefix)_coralsummary.RDS'.
+
+#### Instructions for uploading a summary RDS file
+
+6. Browse to and upload the '(your prefix)_coralsummary.RDS' file, to generate summaries in the plot and table tabs.
+
+Column {data-width=225}
+-------------------------------------
+
+### PROCESS A RAW CORAL DATA FILE {data-height=150}
+```{r select_raw_data}
+checkboxInput("use_parallel", label = "Use parallel processing?", value = TRUE)
+
+numericInput("num_cores", label = "Number of processing cores to use: ", min = 1, max = detectCores(), step = 1, value = detectCores()-1)
+
+textInput("out_prefix", label = "Prefix to append to output files: ", value = "Temp")
+
+fileInput("filenam", label = "Select a coral survey CSV file (make sure you've entered a file Prefix!)", accept = c('text/csv', 'text/comma-separated-values', '.csv'))
+
+fileInput("sitesfilenam", label = "Select a sites CSV file (optional)", accept = c('text/csv', 'text/comma-separated-values', '.csv'))
+
+observeEvent(eventExpr = input$filenam, {
+  withProgress(message = "Please be patient. Calculating something wonderful...", value = 0, {
+    FuncCorals(filenam = input$filenam$datapath, sitesfilenam = input$sitesfilenam$datapath, out_prefix = input$out_prefix, run_parallel = input$use_parallel, set_cores = input$num_cores)
+     showModal(modalDialog(
+        title = "Done",
+        "You may now select the summary RDS file for viewing (use the input box below, titled 'Select a summary RDS file')"
+      ))
+    })
+})
+```
+
+### IMPORT A CORAL SUMMARY FILE {data-height=100}
+
+```{r select_files}
+fileInput("summaryfile", label = "Select a summary RDS file", accept = c('.RDS'))
+
+rv <- reactiveValues(CalcRepSites = NULL, Warn_list = NULL, PC_options = NULL, PC_Site = NULL, SS_PointCount = NULL, SS_PercCov = NULL, RC_Site = NULL, Bleach = NULL, mapdat = NULL)
+  
+observeEvent(eventExpr = input$summaryfile, {
+  out <- readRDS(input$summaryfile$datapath)
+  rv$CalcRepSites <- out$CalcRepSites
+  rv$Warn_list <- out$Warn_list
+  rv$PC_options <- out$PC_options
+  rv$PC_Site <- out$PC_Site
+  rv$SS_PointCount <- out$SS_PointCount
+  rv$SS_PercCov <- out$SS_PercCov
+  rv$RC_Site <- out$RC_Site
+  rv$Bleach <- out$Bleach
+  rv$mapdat <- out$mapdat
+  Sys.sleep(0.25)
+  
+  showModal(modalDialog(
+  title = "Done",
+  "You may now navigate to the other tabs for summary graphs and tables"
+  ))
+})
+checkboxInput("plotwarn_on", label = "Show plot warnings", value = TRUE)
+```
+
+Data Warnings
+====================================== 
+Column
+-------------------------------------
+**SURVEY TRIPS WITH PURPOSE OTHER THAN "ANNUAL" OR "EPISODIC"**
+*(These data are excluded from analyses)*
+```{r warnings}
+renderTable({
+  validate(need(!is.null(rv$Warn_list), message = FALSE))
+  AltPurp <- rv$Warn_list$AltPurp
+  validate(need(nrow(AltPurp) > 0, "No warnings to show"))
+  AltPurp
+  }, align = "c", na = "--", include.rownames = FALSE)
+br()
+```
+
+**SURVEY TRIPS WITH MISSING TAXON CODES OR RECORDED AS "NO TAXON"**
+```{r}
+renderTable({
+  validate(need(!is.null(rv$Warn_list), message = FALSE))
+  NoTaxon <- rv$Warn_list$NoTaxon
+  validate(need(nrow(NoTaxon) > 0, "No warnings to show"))
+  NoTaxon
+  }, align = "c", na = "--", include.rownames = FALSE)
+br()
+```
+
+**SURVEY TRIPS WITH BLEACHING CODES ASSIGNED TO NON-CORAL TRANSECT HITS**
+*(These data are excluded from bleaching analyses)*
+```{r}
+renderTable({
+  validate(need(!is.null(rv$Warn_list), message = FALSE))
+  BleachCode <- rv$Warn_list$BleachCode
+  validate(need(nrow(BleachCode) > 0, "No warnings to show"))
+  BleachCode
+  }, align = "c", na = "--", include.rownames = FALSE)
+br()
+```
+
+**SITE-SURVEYS WITH TRANSECT COUNTS OTHER THAN 4 OR 20**
+```{r}
+renderTable({
+  validate(need(!is.null(rv$Warn_list), message = FALSE))
+  TransCount <- rv$Warn_list$TransCount
+  validate(need(nrow(TransCount) > 0, "No warnings to show"))
+  TransCount
+  }, align = "c", na = "--", include.rownames = FALSE)
+br()
+```
+
+**TRANSECT SURVEYS WITH TOTAL TAXON COUNTS NOT DIVISIBLE BY 10**
+```{r}
+renderTable({
+  validate(need(!is.null(rv$Warn_list), message = FALSE))
+  TaxonCountDiv <- rv$Warn_list$TaxonCountDiv
+  validate(need(nrow(TaxonCountDiv) > 0, "No warnings to show"))
+  TaxonCountDiv
+  }, align = "c", na = "--", include.rownames = FALSE)
+br()
+```
+
+**TRANSECT SURVEYS WITH TOTAL TAXON COUNTS LESS THAN 200 OR GREATER THAN 480**
+```{r}
+renderTable({
+  validate(need(!is.null(rv$Warn_list), message = FALSE))
+  TaxonCount <- rv$Warn_list$TaxonCount
+  validate(need(nrow(TaxonCount) > 0, "No warnings to show"))
+  TaxonCount
+  }, align = "c", na = "--", include.rownames = FALSE)
+br()
+```
+
+**TRANSECT SURVEYS WITH SHADOW HITS EXCEEDING 5% OF TOTAL TAXON COUNTS**
+```{r}
+renderTable({
+  validate(need(!is.null(rv$Warn_list), message = FALSE))
+  ShadowCount <- rv$Warn_list$ShadowCount
+  validate(need(nrow(ShadowCount) > 0, "No warnings to show"))
+  ShadowCount
+  }, align = "c", na = "--", include.rownames = FALSE)
+br()
+```
+
+**TRANSECT SURVEYS WITH UNKNOWN ("UNK") HITS EXCEEDING 5% OF TOTAL TAXON COUNTS**
+```{r}
+renderTable({
+  validate(need(!is.null(rv$Warn_list), message = FALSE))
+  UNKCount <- rv$Warn_list$UNKCount
+  validate(need(nrow(UNKCount) > 0, "No warnings to show"))
+  UNKCount
+  }, align = "c", na = "--", include.rownames = FALSE)
+br()
+```
+
+% Cover
+======================================  
+Inputs {.sidebar data-width=240}
+-------------------------------------
+```{r input_PC}
+actionButton("export_perccov_button", "Click to Export Plot Data", width = "95%")
+
+br()
+
+br()
+
+observeEvent(eventExpr = input$export_perccov_button, {
+  if(!is.null(dat_PC3()) & !is.null(input$sel_lev) & !is.null(input$sel_sublev)) {
+    dat_export <- dat_PC3() 
+    colnames(dat_export)[colnames(dat_export)=="y_val"] <- input$sel_metric
+    colnames(dat_export)[colnames(dat_export)=="y_low"] <- paste0(input$sel_error, "_low")
+    colnames(dat_export)[colnames(dat_export)=="y_high"] <- paste0(input$sel_error, "_high")
+  
+    write.csv(dat_export, paste0(input$sel_lev, "_", input$sel_sublev, "_perccov.csv"), row.names = FALSE)
+    showModal(modalDialog(
+    title = "Done",
+    paste0("The data have been saved as ", input$sel_lev, "_", input$sel_sublev, "_perccov.csv in the current working directory, ", getwd())
+    )
+    )
+  }
+})
+    
+radioButtons("sel_sitelev", 
+             label = "Site level to summarize", 
+             choiceNames = list("Reporting Site", "Site"),
+             choiceValues = list("RepSiteSurvID", "SiteSurvID"),
+             selected = "SiteSurvID",
+             inline = TRUE)
+```
+*\*Reporting site summaries are limited to active sites and begin on the first year for which data are available for all active sites.*
+```{r input_PC2}
+br()
+checkboxInput("PCactive", label = "Show active sites only", value = FALSE)
+
+renderUI({
+  if(!is.null(rv$mapdat)) { 
+    RStemp <- rv$mapdat %>%
+    {if (input$PCactive == TRUE) filter(., IsActive == 1) else filter(., IsActive %in% c(0,1))} %>%
+      select(ReportingSite) %>%
+      distinct()
+    RSchoice <- sort(as.character(RStemp$ReportingSite))
+    
+  checkboxGroupInput("sel_showRS", label = "Show results for these reporting sites", choices = RSchoice, selected = RSchoice, inline = FALSE)
+  }
+})
+
+renderUI({
+  if(!is.null(input$sel_showRS) & !is.null(input$sel_lev) & !is.null(rv$PC_Site)) {
+    checkboxGroupInput("sel_showyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$PC_Site[[input$sel_lev]], RSS %in% input$sel_showRS, select = Year))$Year)), selected = sort(as.character(unique(subset(rv$PC_Site[[input$sel_lev]], RSS %in% input$sel_showRS, select = Year))$Year)), inline = TRUE)
+  }
+})
+actionButton("PCYrsall_button", "Select All", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
+
+actionButton("PCYrsnone_button", "Select None", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
+
+observeEvent(eventExpr = input$PCYrsall_button, {
+  updateCheckboxGroupInput(session, "sel_showyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$PC_Site[[input$sel_lev]], RSS %in% input$sel_showRS, select = Year))$Year)), selected = sort(as.character(unique(subset(rv$PC_Site[[input$sel_lev]], RSS %in% input$sel_showRS, select = Year))$Year)), inline = TRUE)})
+
+observeEvent(eventExpr = input$PCYrsnone_button, {
+  updateCheckboxGroupInput(session, "sel_showyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$PC_Site[[input$sel_lev]], RSS %in% input$sel_showRS, select = Year))$Year)), selected = NULL, inline = TRUE)})
+
+br()
+
+br()
+
+renderUI({
+    selectInput("sel_lev", label = "Select grouping level", 
+            choices = levels(rv$PC_options$Level), selected = levels(rv$PC_options$Level)[1])
+  })
+
+renderUI({
+  if(!is.null(input$sel_lev)) {
+    sublev = rv$PC_options$Sublevel[rv$PC_options$Level == input$sel_lev] %>%
+    as.character()
+    selectInput("sel_sublev", label = "Select sublevel", choices = sublev, selected = sublev[1])}
+  })
+
+checkboxInput("sel_episodic", label = "Include episodic survey data", value = TRUE)
+
+radioButtons("sel_metric",
+            label = "Metric to plot",
+            choices = list("Median", "Mean"),
+            selected = "Median",
+            inline = TRUE)
+
+radioButtons("sel_error",
+             label = "Bootstrapped error bars to plot",
+             choiceNames = list("95%CI", "SE*"),
+             choiceValues = list("95%CI", "SE"),
+             selected = "95%CI",
+             inline = TRUE)
+```
+*\*SE error bars may extend below zero -- SE is valid only if individual transect data (% cover) are approximately normally distributed.*
+
+```{r input_PC3}
+br()
+checkboxInput("PC_blackwhite", label = "Plot in grayscale", value = FALSE)
+
+numericInput("PCx_int", label = "Increment for x-axis ticks", min = 1, max = 5, step = 1, value = 1)
+
+numericInput("PCy_int", label = "Increment for y-axis ticks", min = 5, max = 100, step = 5, value = 10)
+
+textInput("PCplot_title", "Enter text to use for plot title", value = "")
+```
+
+Column
+-------------------------------------
+### Trends in % Cover
+  
+```{r plot_PC}
+dat_PC3 <- reactive({
+  if(!is.null(input$sel_showRS) & !is.null(rv$PC_Site) & !is.null(input$sel_lev) & !is.null(input$sel_sublev) & !is.null(input$sel_showyrs)) {
+
+  sites <- rv$mapdat %>%
+    filter(ReportingSite %in% input$sel_showRS) %>%
+    {if (input$PCactive == TRUE) filter(., IsActive == 1) else filter(., IsActive %in% c(0,1))} %>%
+    {if (input$sel_sitelev == "SiteSurvID") select(., Site) else select(., ReportingSite)} %>%
+    distinct()
+  colnames(sites) <- "RSS"
+  sites <- sort(as.character(sites$RSS))
+  
+  dat_PC <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_sitelev & Sublevel == input$sel_sublev & RSS %in% sites & Year %in% as.numeric(input$sel_showyrs))
+  
+  if(input$sel_episodic == FALSE) # remove episodic data
+    dat_PC %<>% filter(Purpose == "Annual")
+  
+  if(input$sel_metric == "Median" & input$sel_error == "95%CI")  # not the most efficient way, but it's fail-safe
+    dat_PC2 <- dat_PC %>%
+    select(RSS, Year, SurvDate, NumTransect, y_val = median, y_low = med_low95, y_high = med_high95)
+  
+  if(input$sel_metric == "Mean" & input$sel_error == "95%CI")
+    dat_PC2 <- dat_PC %>%
+    select(RSS, Year, SurvDate, NumTransect, y_val = mean, y_low = mean_low95, y_high = mean_high95)
+  
+  if(input$sel_metric == "Median" & input$sel_error == "SE")
+    dat_PC2 <- dat_PC %>%
+    mutate(
+      y_low = median - med_SE, 
+      y_high = median + med_SE) %>%
+    select(RSS, Year, SurvDate, NumTransect, y_val = median, y_low, y_high)
+  
+  if(input$sel_metric == "Mean" & input$sel_error == "SE")
+    dat_PC2 <- dat_PC %>%
+    mutate(
+      y_low = mean - mean_SE, 
+      y_high = mean + mean_SE) %>%
+    select(RSS, Year, SurvDate, NumTransect, y_val = mean, y_low, y_high)
+  
+  dat_PC2 %<>% arrange(RSS, Year, SurvDate)
+  dat_PC2
+    }
+})
+
+renderPlotly({
+  validate(need(nrow(dat_PC3()) > 0, message = FALSE))
+  plotly_PC <-
+    ggplot(data = dat_PC3(), aes(x = SurvDate, y = y_val, colour = RSS, shape = RSS)) +
+    geom_point() +
+    scale_y_continuous(breaks = seq(0, 100, by = input$PCy_int), labels = seq(0, 100, by = input$PCy_int), limits = c(-5, 100)) +
+    scale_x_date(date_labels = "%Y", date_breaks = paste0(input$PCx_int, " years")) +
+    labs(title = input$PCplot_title, x = "Year", y = paste0(input$sel_metric, " % Cover (", input$sel_error, ")")) +
+    theme_bw(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  if(nrow(subset(dat_PC3(), NumTransect >=8)) > 0)
+    plotly_PC <- plotly_PC +
+    geom_line(data = subset(dat_PC3(), NumTransect >= 8), linetype = "solid") +
+    geom_errorbar(data = subset(dat_PC3(), NumTransect >= 8), aes(ymin = y_low, ymax = y_high), width = .25)
+
+  if(nrow(subset(dat_PC3(), NumTransect < 8)) > 0)
+    plotly_PC <- plotly_PC +
+    geom_line(data = subset(dat_PC3(), NumTransect < 8), linetype = "dotted") 
+  
+  if(input$PC_blackwhite) plotly_PC <- plotly_PC + scale_colour_grey()
+
+  if(input$plotwarn_on) {
+    ggplotly(plotly_PC, autosize = FALSE, width = 700) %>% 
+ layout(annotations = 
+          list(y = 101, showarrow = FALSE,
+               text = "(NOTES: X-axis tick marks Jan. 1 of each year. If fewer than 8 transects, lines are dotted)",
+               font=list(size=10, color="red"))) # Plotly doesn't do subtitles at this point
+  } else {
+    ggplotly(plotly_PC, autosize = FALSE, width = 700)
+  }
+})
+```
+
+### Data Table for % Cover Plots
+
+```{r tab_PCdat}
+renderTable({
+  validate(need(!is.null(dat_PC3()), message = FALSE))
+  dat_tab <- dat_PC3() 
+  colnames(dat_tab)[colnames(dat_tab)=="y_val"] <- input$sel_metric
+  colnames(dat_tab)[colnames(dat_tab)=="y_low"] <- paste0(input$sel_error, "_low")
+  colnames(dat_tab)[colnames(dat_tab)=="y_high"] <- paste0(input$sel_error, "_high")
+  dat_tab$SurvDate <- format(dat_tab$SurvDate,'%Y-%m-%d')
+  dat_tab
+  }, align = "c", na = "--", include.rownames = FALSE
+  )
+```
+
+Cover Table
+====================================== 
+Column {data-width=250}
+-------------------------------------
+```{r input_tab}
+checkboxInput("tabactive", label = "Show active sites only", value = FALSE, width = "95%")
+
+renderUI({
+  if(!is.null(rv$mapdat)) {
+    tabsites <- rv$mapdat %>%
+    {if (input$tabactive == TRUE) filter(., IsActive == 1) else filter(., IsActive %in% c(0,1))} %>%
+      select(RSS = Site) %>%
+      distinct()
+    tabsites <- sort(as.character(tabsites$RSS))
+    
+    selectInput("sel_tabsite", label = "Select a site", choices = tabsites, selected = tabsites[1], width = "95%")
+  }
+})
+
+renderUI({
+  if(!is.null(rv$PC_Site) & !is.null(input$sel_tabsite)) {
+    surv <- sort(unique(na.omit(rv$PC_Site$Taxon$SurvDate[rv$PC_Site$Taxon$RSS == input$sel_tabsite])))
+    if(length(surv) > 0)
+      sliderTextInput("sel_tabsurv", label = "Choose a survey", choices = surv, selected = max(surv), dragRange = FALSE, force_edges = TRUE, width = "95%")
+  }
+})
+
+actionButton("rtf_button", "Click to Export Tables", width = "95%")
+
+observeEvent(eventExpr = input$rtf_button, {
+  rtffile <- RTF(paste0(input$sel_tabsite, "_", input$sel_tabsurv, ".doc"), width = 11, height = 8.5, font.size = 10, omi = c(1, 0.5, 1, 0.5))
+  addHeader(rtffile, title = paste0(input$sel_tabsite, " (", input$sel_tabsurv, ")"), subtitle = "Point Counts", font.size = 14)
+  addTable(rtffile, data_point(), col.justify = "C", header.col.justify = "C", row.names = TRUE)
+  addPageBreak(rtffile, width = 10, height = 8.5, omi = c(1, 0.5, 1, 0.5))
+  addHeader(rtffile, title = paste0(input$sel_tabsite, " (", input$sel_tabsurv, ")"), subtitle = "% Cover", font.size = 14)
+  addTable(rtffile, data_perccov(), col.justify = "C", header.col.justify = "C", row.names = TRUE)
+  done(rtffile)
+  showModal(modalDialog(
+    title = "Done",
+    paste0("The tables have been saved as ", input$sel_tabsite, "_", input$sel_tabsurv, ".doc in the current working directory, ", getwd())
+  ))
+})
+br()
+br()
+```
+*\*Error (SE and 95% CI) is not calculated for sites with less than eight transects, or for sublevels with zero occurrences.*
+
+```{r}
+br() # Add blank lines to increase page height with a hack
+br()
+br()
+br()
+br()
+br()
+br()
+```
+
+Column {vertical_layout: scroll data-width=500}
+-------------------------------------
+### Point Counts by SITE-SURVEY
+  
+```{r tab_point}
+data_point <- reactive({
+  if(!is.null(input$sel_tabsite) & !is.null(input$sel_tabsurv)) {
+    req(unique(na.omit(rv$PC_Site$Taxon$RSS_SurvID[rv$PC_Site$Taxon$RSS == input$sel_tabsite & rv$PC_Site$Taxon$SurvDate == input$sel_tabsurv])), cancelOutput = TRUE)
+  pointcov <- rv$SS_PointCount[[unique(na.omit(rv$PC_Site$Taxon$RSS_SurvID[rv$PC_Site$Taxon$RSS == input$sel_tabsite & rv$PC_Site$Taxon$SurvDate == input$sel_tabsurv]))]]
+  pointcov
+  }
+  })
+
+renderTable({
+  validate(need(nrow(data_point()) > 0, message = FALSE))
+  tab_pointcov <- data_point()
+  }, align = "c", include.rownames=TRUE)
+```
+
+### % Cover by SITE-SURVEY
+
+```{r tab_perccov}
+data_perccov <- reactive({
+  if(!is.null(input$sel_tabsite) & !is.null(input$sel_tabsurv)) {
+    req(unique(na.omit(rv$PC_Site$Taxon$RSS_SurvID[rv$PC_Site$Taxon$RSS == input$sel_tabsite & rv$PC_Site$Taxon$SurvDate == input$sel_tabsurv])), cancelOutput = TRUE)
+  perccov <- rv$SS_PercCov[[unique(na.omit(rv$PC_Site$Taxon$RSS_SurvID[rv$PC_Site$Taxon$RSS == input$sel_tabsite & rv$PC_Site$Taxon$SurvDate == input$sel_tabsurv]))]]
+  perccov
+  } 
+  })
+
+renderTable({
+  validate(need(nrow(data_perccov()) > 0, message = FALSE))
+  tab_perccov <- data_perccov()
+  }, align = "c", include.rownames=TRUE)
+```
+
+Relative Cover
+====================================== 
+Inputs {.sidebar data-width=250}
+-------------------------------------
+```{r input_RC}
+actionButton("export_RC_button", "Click to Export Plot Data", width = "95%")
+
+br()
+
+br()
+
+observeEvent(eventExpr = input$export_RC_button, {
+  if(!is.null(dat_RC3()) & !is.null(input$sel_RCsite) & !is.null(input$sel_RCgrouplev)) {
+    dat_RCexport <- dat_RC3() 
+    colnames(dat_RCexport)[colnames(dat_RCexport)=="y_val"] <- input$sel_RCmetric
+    colnames(dat_RCexport)[colnames(dat_RCexport)=="y_low"] <- paste0(input$sel_RCerror, "_low")
+    colnames(dat_RCexport)[colnames(dat_RCexport)=="y_high"] <- paste0(input$sel_RCerror, "_high")
+  
+    write.csv(dat_RCexport, paste0(input$sel_RCsite, "_", input$sel_RCgrouplev, "_relcov.csv"), row.names = FALSE)
+    showModal(modalDialog(
+    title = "Done",
+    paste0("The data have been saved as ", input$sel_RCsite, "_", input$sel_RCgrouplev, "_relcov.csv in the current working directory, ", getwd())
+    )
+    )
+  }
+})
+
+radioButtons("sel_RCsitelev", 
+             label = "Site level to summarize", 
+             choiceNames = list("Reporting Site", "Site"),
+             choiceValues = list("RepSiteSurvID", "SiteSurvID"),
+             selected = "SiteSurvID",
+             inline = TRUE)
+```
+*\*Reporting site summaries are limited to active sites and begin on the first year for which data are available for all active sites.*
+```{r input_RC2}
+br()
+checkboxInput("RCactive", label = "Show active sites only", value = FALSE)
+
+renderUI({
+  if(!is.null(rv$mapdat)) {
+    RCsites <- rv$mapdat %>%
+    {if (input$RCactive == TRUE) filter(., IsActive == 1) else filter(., IsActive %in% c(0,1))} %>%
+    {if (input$sel_RCsitelev == "SiteSurvID") select(., Site) else select(., ReportingSite)} %>%
+      distinct()
+    colnames(RCsites) <- "RSS"
+    RCsites <- sort(as.character(RCsites$RSS))
+    
+    selectInput("sel_RCsite", label = "Select a (reporting) site", choices = RCsites, selected = RCsites[1])
+  }
+})
+
+renderUI({
+  if(!is.null(input$sel_RCsite) & !is.null(input$sel_RCgrouplev) & !is.null(rv$RC_Site)) {
+    checkboxGroupInput("sel_showRCyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$RC_Site[[input$sel_RCgrouplev]], RSS == input$sel_RCsite, select = Year))$Year)), selected = sort(as.character(unique(subset(rv$RC_Site[[input$sel_RCgrouplev]], RSS == input$sel_RCsite, select = Year))$Year)), inline = TRUE)
+  }
+})
+actionButton("RCYrsall_button", "Select All", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
+
+actionButton("RCYrsnone_button", "Select None", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
+
+observeEvent(eventExpr = input$RCYrsall_button, {
+  updateCheckboxGroupInput(session, "sel_showRCyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$RC_Site[[input$sel_RCgrouplev]], RSS == input$sel_RCsite, select = Year))$Year)), selected = sort(as.character(unique(subset(rv$RC_Site[[input$sel_RCgrouplev]], RSS == input$sel_RCsite, select = Year))$Year)), inline = TRUE)})
+
+observeEvent(eventExpr = input$RCYrsnone_button, {
+  updateCheckboxGroupInput(session, "sel_showRCyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$RC_Site[[input$sel_RCgrouplev]], RSS == input$sel_RCsite, select = Year))$Year)), selected = NULL, inline = TRUE)})
+
+br()
+
+br()
+
+renderUI({
+  selectInput("sel_RCgrouplev", label = "Select grouping level", choices = c("FunctionalGroup", "Taxon"), selected = "FunctionalGroup")
+})
+```
+*\*Relative cover for functional groups may not sum to 100% because some coral species could not be assigned to a functional group.*
+
+```{r input_RC3}
+br()
+temp_RC <- reactive({
+    if(!is.null(rv$RC_Site) & !is.null(input$sel_RCgrouplev) & !is.null(input$sel_RCsite) & !is.null(input$sel_showRCyrs)) {
+      
+  temp <- subset(rv$RC_Site[[input$sel_RCgrouplev]], SiteLev == input$sel_RCsitelev & RSS == input$sel_RCsite & Year %in% as.numeric(input$sel_showRCyrs))
+  if(input$sel_RCepisodic == FALSE) # remove episodic data
+      temp %<>% filter(Purpose == "Annual")
+  temp}
+})
+  
+keep_sublev <- reactive({
+  if(!is.null(temp_RC())) {
+    keep_sublev <- temp_RC() %>% # delete the sublevels that never occur
+      group_by(Sublevel) %>%
+      summarise(sumRC = sum(RCtot)) %>%
+      filter(sumRC > 0) %>%
+      select(Sublevel)
+    keep_sublev <- sort(as.character(keep_sublev$Sublevel))}
+  keep_sublev
+})
+    
+renderUI({  
+  if(!is.null(temp_RC())) {
+   checkboxGroupInput("RCsublev_plot", label = "Select sublevel(s)", choices = keep_sublev(), selected = keep_sublev(), inline = TRUE)
+  }
+})
+actionButton("RCall_button", "Select All", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
+
+actionButton("RCnone_button", "Select None", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
+
+actionButton("RCesa_button", "Select ESA", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
+
+observeEvent(eventExpr = input$RCall_button, {
+  updateCheckboxGroupInput(session, "RCsublev_plot", label = "Select sublevel(s)", choices = keep_sublev(), selected = keep_sublev(), inline = TRUE)})
+
+observeEvent(eventExpr = input$RCnone_button, {
+  updateCheckboxGroupInput(session, "RCsublev_plot", label = "Select sublevel(s)", choices = keep_sublev(), selected = NULL, inline = TRUE)})
+
+observeEvent(eventExpr = input$RCesa_button, {
+  if(input$sel_RCgrouplev == "Taxon") { 
+    updateCheckboxGroupInput(session, "RCsublev_plot", label = "Select sublevel(s)", choices = keep_sublev(), selected = c("ACER", "APAL", "DCYL", "OANN", "OFAV", "OFRA"), inline = TRUE)
+    }
+  })
+
+br()
+
+br()
+
+checkboxInput("sel_RCepisodic", label = "Include episodic survey data", value = TRUE)
+
+radioButtons("sel_RCmetric",
+             label = "Metric to plot",
+             choices = list("Median", "Mean"),
+             selected = "Median",
+             inline = TRUE)
+
+radioButtons("sel_RCerror",
+             label = "Bootstrapped error bars to plot",
+             choices = list("95%CI", "SE"),
+             selected = "95%CI",
+             inline = TRUE)
+```
+*\*SE error bars may extend below zero -- SE is valid only if individual transect data (% cover) are approximately normally distributed.*
+
+```{r input_RC4}
+br()
+checkboxInput("RC_blackwhite", label = "Plot in grayscale", value = FALSE)
+
+numericInput("RCx_int", label = "Increment for x-axis ticks", min = 1, max = 5, step = 1, value = 1)
+
+numericInput("RCy_int", label = "Increment for y-axis ticks", min = 5, max = 100, step = 5, value = 10)
+
+textInput("RCplot_title", "Enter text to use for plot title", value = "")
+```
+
+Column {data-width=500}
+-------------------------------------
+### Trends in Coral Relative Cover
+  
+```{r plot_RC}
+dat_RC3 <- reactive({
+  if(!is.null(temp_RC()) & !is.null(input$RCsublev_plot)) {
+  dat_RC <- temp_RC() %>%
+    filter(Sublevel %in% input$RCsublev_plot)
+  
+  if(input$sel_RCmetric == "Median" & input$sel_RCerror == "95%CI")  # not the most efficient way, but it's fail-safe
+    dat_RC2 <- dat_RC %>%
+    select(Sublevel, Year, SurvDate, NumTransect, y_val = median, y_low = med_low95, y_high = med_high95)
+  
+  if(input$sel_RCmetric == "Mean" & input$sel_RCerror == "95%CI")
+    dat_RC2 <- dat_RC %>%
+    select(Sublevel, Year, SurvDate, NumTransect, y_val = mean, y_low = mean_low95, y_high = mean_high95)
+  
+  if(input$sel_RCmetric == "Median" & input$sel_RCerror == "SE")
+    dat_RC2 <- dat_RC %>%
+    mutate(
+      y_low = median - med_SE, 
+      y_high = median + med_SE) %>%
+    select(Sublevel, Year, SurvDate, NumTransect, y_val = median, y_low, y_high)
+  
+  if(input$sel_RCmetric == "Mean" & input$sel_RCerror == "SE")
+    dat_RC2 <- dat_RC %>%
+    mutate(
+      y_low = mean - mean_SE, 
+      y_high = mean + mean_SE) %>%
+    select(Sublevel, Year, SurvDate, NumTransect, y_val = mean, y_low, y_high)
+  
+  dat_RC2 %<>%
+    arrange(Sublevel, Year, SurvDate)
+  dat_RC2
+  }
+})
+
+renderPlotly({
+  validate(need(nrow(dat_RC3()) > 0, message = FALSE))
+  plotly_RC <- 
+    ggplot(data = dat_RC3(), aes(x = SurvDate, y = y_val, colour = Sublevel, shape = Sublevel)) +
+    geom_point() +
+    scale_y_continuous(breaks = seq(0, 100, by = input$RCy_int), labels = seq(0, 100, by = input$RCy_int), limits = c(-5, 100)) +
+    scale_x_date(date_labels = "%Y", date_breaks = paste0(input$RCx_int, " years")) +
+    labs(title = input$RCplot_title, x = "Year", y = paste0(input$sel_RCmetric, " % Relative Cover (", input$sel_RCerror, ")")) +
+    theme_bw(base_size = 12) +
+    theme(legend.title = element_blank(), 
+          axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  if(nrow(subset(dat_RC3(), NumTransect >=8)) > 0)
+    plotly_RC <- plotly_RC + 
+    geom_line(data = subset(dat_RC3(), NumTransect >= 8), linetype = "solid") +
+    geom_errorbar(data = subset(dat_RC3(), NumTransect >= 8), aes(ymin = y_low, ymax = y_high), width = .25)
+  
+  if(nrow(subset(dat_RC3(), NumTransect < 8)) > 0)
+    plotly_RC <- plotly_RC +
+    geom_line(data = subset(dat_RC3(), NumTransect < 8), linetype = "dotted")
+  
+  if(input$RC_blackwhite) plotly_RC <- plotly_RC + scale_colour_grey()
+  
+  if(input$plotwarn_on) {
+  ggplotly(plotly_RC) %>%
+    layout(annotations =
+             list(y = 101, showarrow = FALSE,
+                  text = "(NOTES: Only includes data for which functional group is defined. \nX-axis tick marks Jan. 1 of each year. If fewer than 8 transects, lines are dotted)",
+                  font=list(size=10, color="red"))) # Plotly doesn't do subtitles at this point
+  } else {
+    ggplotly(plotly_RC)
+  }
+    
+})
+```
+
+### Sample Sizes (# of Transects) for Coral Relative Cover Plots, by Survey Date
+
+```{r tab_RCsamples}
+renderTable({
+  validate(need(!is.null(dat_RC3()), message = FALSE))
+    RCsamp <- dat_RC3() %>%
+      select(SurvDate, NumTransect) %>%
+      group_by(SurvDate, NumTransect) %>%
+      distinct() %>%
+      arrange(SurvDate)
+    RCsamp$SurvDate <- format(RCsamp$SurvDate,'%Y-%m-%d')
+    RCsamp
+  }, align = "c", include.rownames = FALSE)
+```
+
+### Data Table for Relative Cover Plots
+
+```{r tab_RCdat}
+renderTable({
+  validate(need(!is.null(dat_RC3()), message = FALSE))
+  dat_RCtab <- dat_RC3() 
+  colnames(dat_RCtab)[colnames(dat_RCtab)=="y_val"] <- input$sel_RCmetric
+  colnames(dat_RCtab)[colnames(dat_RCtab)=="y_low"] <- paste0(input$sel_RCerror, "_low")
+  colnames(dat_RCtab)[colnames(dat_RCtab)=="y_high"] <- paste0(input$sel_RCerror, "_high")
+  dat_RCtab$SurvDate <- format(dat_RCtab$SurvDate,'%Y-%m-%d')
+  dat_RCtab
+  }, align = "c", na = "--", include.rownames = FALSE
+  )
+```
+
+Bleaching
+======================================
+Inputs {.sidebar data-width=200}
+-------------------------------------
+```{r input_bleach}
+radioButtons("sel_blsitelev", 
+             label = "Site level to summarize", 
+             choiceNames = list("Reporting Site", "Site"),
+             choiceValues = list("RepSiteSurvID", "SiteSurvID"),
+             selected = "SiteSurvID",
+             inline = TRUE)
+
+checkboxInput("blactive", label = "Show active sites only", value = FALSE)
+
+renderUI({
+  if(!is.null(rv$mapdat)) {
+    blsites <- rv$mapdat %>%
+    {if (input$blactive == TRUE) filter(., IsActive == 1) else filter(., IsActive %in% c(0,1))} %>%
+    {if (input$sel_blsitelev == "SiteSurvID") select(., Site) else select(., ReportingSite)} %>%
+      distinct()
+    colnames(blsites) <- "RSS"
+    blsites <- sort(as.character(blsites$RSS))
+    
+    selectInput("sel_blsite", label = "Select a (reporting) site", choices = blsites, selected = blsites[1])
+  }
+})
+```
+*\*Bar plots only show surveyed years*
+``` {r input_bleach2}
+checkboxInput("sel_blepisodic", label = "Include 'Episodic' trips", value = TRUE)
+
+textInput("blplot_title", "Enter text to use for plot title", value = "") 
+br()
+```
+*\*To export a bleach plot, right-click on the plot and select 'Save image as'*
+  
+Column {data-width=550}
+-------------------------------------
+### Coral Cover by Bleaching Code
+  
+```{r plot_bleachPC}
+dat_bleach <- reactive({
+  if(!is.null(rv$Bleach) & !is.null(input$sel_blsite)) {
+  
+  temp_bleach <- subset(rv$Bleach, SiteLev == input$sel_blsitelev & RSS == input$sel_blsite) %>%
+    arrange(SurvDate)
+  
+  if (input$sel_blepisodic == FALSE) # remove episodic data
+    temp_bleach %<>% filter(Purpose == "Annual")
+  
+  temp_bleach$SurvDate = as.factor(temp_bleach$SurvDate)
+  temp_bleach}
+})
+
+renderPlot({
+  validate(need(nrow(dat_bleach()) > 0, message = FALSE))
+  
+  plot_bleachPC <- 
+    ggplot(dat_bleach(), aes(x = SurvDate, y = PC, fill = BleachingCode)) +
+    geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
+    scale_fill_grey(start = 0, end = 0.9) +
+    scale_y_continuous(expand = c(0, 0)) +
+    labs(y = "% Cover of Site") +
+    theme_bw(base_size = 12) +
+    facet_grid(. ~ Year, scales = "free_x", switch = "x") +
+    theme(legend.title = element_blank(),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+          strip.text.x = element_text(size = 11),
+          strip.background=element_blank(),
+          panel.border = element_blank(),
+          panel.grid = element_blank(),
+          panel.spacing = unit(-0.05, "lines"))
+  
+  grid.arrange(plot_bleachPC, top = input$blplot_title)
+})
+```
+
+### Proportion Bleaching
+
+```{r plot_bleachRC}
+renderPlot({
+  validate(need(nrow(dat_bleach()) > 0, message = FALSE))
+  
+  plot_bleachRC <- 
+    ggplot(dat_bleach(), aes(x = SurvDate, y = RC, fill = BleachingCode)) +
+    geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
+    scale_fill_grey(start = 0, end = 0.9) +
+    scale_y_continuous(expand = c(0, 0)) +
+    labs(y = "% Cover of Coral") +
+    theme_bw(base_size = 12) +
+    facet_grid(. ~ Year, scales = "free_x",  switch = "x") +
+    theme(legend.title = element_blank(),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+          strip.text.x = element_text(size = 11),
+          strip.background=element_blank(),
+          panel.border = element_blank(),
+          panel.grid = element_blank(),
+          panel.spacing = unit(-0.05, "lines"))
+  
+  grid.arrange(plot_bleachRC, top = input$blplot_title)
+})
+```
+
+
+Map
+====================================== 
+Inputs {.sidebar data-width=200}
+-------------------------------------
+```{r map_input}
+renderUI({
+  if(!is.null(rv$Bleach)) {
+    sliderTextInput("sel_MapSurvey", force_edges = TRUE, label = "Choose a survey event", choices = sort(as.character(unique(rv$Bleach$SurvDate))), selected = max(as.character(unique(rv$Bleach$SurvDate))), dragRange = FALSE, width = "85%")
+  }
+})
+
+br()
+
+checkboxInput("MapActive", label = "Show active sites only", value = FALSE)
+
+br()
+
+radioButtons("sel_MapMetric", 
+             label = "Metric to map:", 
+             choiceNames = list("% coral cover", "% cover by bleach level"),
+             choiceValues = list("PercCoral", "BleachRC"),
+             selected = "PercCoral")
+```
+
+Column {vertical_layout: fill}
+-------------------------------------
+```{r maps}
+output$coralmap = renderLeaflet({
+  if(!is.null(input$sel_MapSurvey)) {
+    validate(need(!is.null(rv$mapdat), message = "Map data have not been processed."))
+    
+    if(input$MapActive) {
+    MapDat_df <- rv$mapdat %>%
+      filter(IsActive == TRUE)
+    } else {
+      MapDat_df <- rv$mapdat
+    }
+    
+    minLong <- min(MapDat_df$medLong, na.rm = TRUE)
+    minLat <- min(MapDat_df$medLat, na.rm = TRUE)
+    maxLong <- max(MapDat_df$medLong, na.rm = TRUE)
+    maxLat <- max(MapDat_df$medLat, na.rm = TRUE)
+    
+    MapDat_df %<>%
+     filter(SurvDate == input$sel_MapSurvey) %>%
+     select(-c(ReportingSiteName, ReportingSite, IsActive, minyr, maxyr, Year))
+  
+  basemap <- leaflet() %>%
+     addProviderTiles("Esri.NatGeoWorldMap")
+  
+  if(input$sel_MapMetric == "PercCoral") {
+     chartmap <- basemap %>%
+       addMinicharts(
+         lng = MapDat_df$medLong,
+         lat = MapDat_df$medLat,
+         type = "pie",
+         width = 25,
+         height = 25,
+         transitionTime = 0,
+         layerId = MapDat_df$poptext,
+         chartdata = as.matrix(MapDat_df[, c("%Coral", "%NonCoral")]),
+         colorPalette = c("red", "gray"),
+         opacity = .85)
+     } else {
+       if(input$sel_MapMetric == "BleachRC") {
+        chartmap <- basemap %>%
+          addMinicharts(
+            lng = MapDat_df$medLong,
+            lat = MapDat_df$medLat,
+            type = "pie",
+            width = 2*MapDat_df$`%Coral`,
+            transitionTime = 0,
+            layerId = MapDat_df$poptext,
+            chartdata = as.matrix(MapDat_df[, c("UNBL", "BL1", "BL2", "BL3", "BL4")]),
+            colorPalette = heat.colors(n = 5),
+            opacity = .85
+          )
+      }
+     }
+  
+  chartmap %>% fitBounds(minLong, minLat, maxLong, maxLat)
+  }
+  })
+leafletOutput('coralmap', height=600)
+```
