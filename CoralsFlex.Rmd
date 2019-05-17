@@ -54,19 +54,21 @@ Column {data-width=525}
 -------------------------------------
 #### Instructions for processing a raw data file (jump to Step 6 if you already have a summary RDS file)
 
-1. Create a CSV file that summarizes the coral data by transect with these required columns (case-sensitive): *BleachingCode, Category, CountOfTaxonCode, Date, FunctionalGroup, Latitude, Longitude, ParkCode, Purpose, Site, SubCategory, TaxonCode, Transect, TripName, Year*
+1. Create a coral data CSV file that summarizes the coral data by transect with these required columns (case-sensitive): *BleachingCode, Category, CountOfTaxonCode, Date, FunctionalGroup, Latitude, Longitude, ParkCode, Purpose, Site, SubCategory, TaxonCode, Transect, TripName, Year*
 
-2. For parallel (faster) processing, select the number of cores to use. Default is one less than the maximum number of cores detected on your computer.
+2. Create a sites data CSV file that links reporting sites with sites and specifies if the sites are still active. The required colums are (case-sensitive): *ParkCode, Site, ReportingSite, ReportingSiteName, IsActive* (where "ReportingSiteName" is the full name corresponding with "ReportingSite", and "IsActive" = 1 for active sites and 0 for inactive sites)
 
-3. Enter a prefix to append to the output summary file.
+3. For parallel (faster) processing, select the number of cores to use. Default is one less than the maximum number of cores detected on your computer.
 
-4. Browse to and upload the raw coral data file (CSV).
+4. Enter a prefix to append to the output summary file.
 
-5. When data processing is completed, a summary data file will be output to the current working directory as an RDS with the name '(your prefix)_coralsummary.RDS'.
+5. Browse to and upload the coral and sites data files (CSV), then press the "Import and Process New Data" button.
+
+6. When data processing is completed, a summary data file will be output to the current working directory as an RDS with the name '(your prefix)_coralsummary.RDS'.
 
 #### Instructions for uploading a summary RDS file
 
-6. Browse to and upload the '(your prefix)_coralsummary.RDS' file, to generate summaries in the plot and table tabs.
+7. Browse to and upload the '(your prefix)_coralsummary.RDS' file, to generate summaries in the plot and table tabs.
 
 Column {data-width=225}
 -------------------------------------
@@ -81,9 +83,16 @@ textInput("out_prefix", label = "Prefix to append to output files: ", value = "T
 
 fileInput("filenam", label = "Select a coral survey CSV file (make sure you've entered a file Prefix!)", accept = c('text/csv', 'text/comma-separated-values', '.csv'))
 
-fileInput("sitesfilenam", label = "Select a sites CSV file (optional)", accept = c('text/csv', 'text/comma-separated-values', '.csv'))
+fileInput("sitesfilenam", label = "Select a sites CSV file", accept = c('text/csv', 'text/comma-separated-values', '.csv'))
 
-observeEvent(eventExpr = input$filenam, {
+actionButton("button_import", "IMPORT AND PROCESS NEW DATA", width = "300px")
+
+observeEvent(eventExpr = input$button_import, {
+  if(is.null(input$filenam$datapath))
+  {showModal(modalDialog(title = "Aaaack! No coral data selected!  Please select a file and try again"))}
+    if(is.null(input$sitesfilenam$datapath))
+  {showModal(modalDialog(title = "Aaaack! No sites data selected!  Please select a file and try again"))}
+    
   withProgress(message = "Please be patient. Calculating something wonderful...", value = 0, {
     FuncCorals(filenam = input$filenam$datapath, sitesfilenam = input$sitesfilenam$datapath, out_prefix = input$out_prefix, run_parallel = input$use_parallel, set_cores = input$num_cores)
      showModal(modalDialog(
@@ -218,7 +227,7 @@ br()
 
 % Cover
 ======================================  
-Inputs {.sidebar data-width=240}
+Inputs {.sidebar data-width=250}
 -------------------------------------
 ```{r input_PC}
 actionButton("export_perccov_button", "Click to Export Plot Data", width = "95%")
@@ -317,7 +326,7 @@ radioButtons("sel_error",
 
 ```{r input_PC3}
 br()
-checkboxInput("PC_blackwhite", label = "Plot in grayscale", value = FALSE)
+checkboxInput("PC_blackwhite", label = "Plot in grayscale (can only handle up to 6 categories)", value = FALSE)
 
 numericInput("PCx_int", label = "Increment for x-axis ticks", min = 1, max = 5, step = 1, value = 1)
 
@@ -326,7 +335,7 @@ numericInput("PCy_int", label = "Increment for y-axis ticks", min = 5, max = 100
 textInput("PCplot_title", "Enter text to use for plot title", value = "")
 ```
 
-Column
+Column {data-width=500}
 -------------------------------------
 ### Trends in % Cover
   
@@ -397,13 +406,13 @@ renderPlotly({
   if(input$PC_blackwhite) plotly_PC <- plotly_PC + scale_colour_grey()
 
   if(input$plotwarn_on) {
-    ggplotly(plotly_PC, autosize = FALSE, width = 700) %>% 
+    ggplotly(plotly_PC) %>% 
  layout(annotations = 
           list(y = 101, showarrow = FALSE,
                text = "(NOTES: X-axis tick marks Jan. 1 of each year. If fewer than 8 transects, lines are dotted)",
                font=list(size=10, color="red"))) # Plotly doesn't do subtitles at this point
   } else {
-    ggplotly(plotly_PC, autosize = FALSE, width = 700)
+    ggplotly(plotly_PC)
   }
 })
 ```
@@ -660,7 +669,7 @@ radioButtons("sel_RCerror",
 
 ```{r input_RC4}
 br()
-checkboxInput("RC_blackwhite", label = "Plot in grayscale", value = FALSE)
+checkboxInput("RC_blackwhite", label = "Plot in grayscale (can only handle up to 6 categories)", value = FALSE)
 
 numericInput("RCx_int", label = "Increment for x-axis ticks", min = 1, max = 5, step = 1, value = 1)
 
@@ -829,13 +838,13 @@ dat_bleach <- reactive({
 
 renderPlot({
   validate(need(nrow(dat_bleach()) > 0, message = FALSE))
-  
+
   plot_bleachPC <- 
     ggplot(dat_bleach(), aes(x = SurvDate, y = PC, fill = BleachingCode)) +
     geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
-    scale_fill_grey(start = 0, end = 0.9) +
+    scale_fill_manual(values = c("NoData" = "yellow", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92")) +
     scale_y_continuous(expand = c(0, 0)) +
-    labs(y = "% Cover of Site") +
+    labs(y = "% Cover of Site", subtitle = "For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)") +
     theme_bw(base_size = 12) +
     facet_grid(. ~ Year, scales = "free_x", switch = "x") +
     theme(legend.title = element_blank(),
@@ -862,9 +871,9 @@ renderPlot({
   plot_bleachRC <- 
     ggplot(dat_bleach(), aes(x = SurvDate, y = RC, fill = BleachingCode)) +
     geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
-    scale_fill_grey(start = 0, end = 0.9) +
+    scale_fill_manual(values = c("NoData" = "yellow", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92")) +
     scale_y_continuous(expand = c(0, 0)) +
-    labs(y = "% Cover of Coral") +
+    labs(y = "% Cover of Coral", subtitle = "For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)") +
     theme_bw(base_size = 12) +
     facet_grid(. ~ Year, scales = "free_x",  switch = "x") +
     theme(legend.title = element_blank(),
@@ -890,7 +899,7 @@ Inputs {.sidebar data-width=200}
 ```{r map_input}
 renderUI({
   if(!is.null(rv$Bleach)) {
-    sliderTextInput("sel_MapSurvey", force_edges = TRUE, label = "Choose a survey event", choices = sort(as.character(unique(rv$Bleach$SurvDate))), selected = max(as.character(unique(rv$Bleach$SurvDate))), dragRange = FALSE, width = "85%")
+    sliderTextInput("sel_MapSurvey", force_edges = TRUE, label = "Choose a survey event", choices = sort(as.character(unique(rv$Bleach$SurvDate))), selected = , dragRange = FALSE, width = "85%")
   }
 })
 
@@ -909,6 +918,7 @@ radioButtons("sel_MapMetric",
 
 Column {vertical_layout: fill}
 -------------------------------------
+*NOTE:  For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)*
 ```{r maps}
 output$coralmap = renderLeaflet({
   if(!is.null(input$sel_MapSurvey)) {
@@ -938,7 +948,7 @@ output$coralmap = renderLeaflet({
        addMinicharts(
          lng = MapDat_df$medLong,
          lat = MapDat_df$medLat,
-         type = "pie",
+         type = "auto",
          width = 25,
          height = 25,
          transitionTime = 0,
@@ -956,8 +966,8 @@ output$coralmap = renderLeaflet({
             width = 2*MapDat_df$`%Coral`,
             transitionTime = 0,
             layerId = MapDat_df$poptext,
-            chartdata = as.matrix(MapDat_df[, c("UNBL", "BL1", "BL2", "BL3", "BL4")]),
-            colorPalette = heat.colors(n = 5),
+            chartdata = as.matrix(MapDat_df[, c("NoData", "UNBL", "BL1", "BL2", "BL3", "BL4")]),
+            colorPalette = c("yellow", "gray25", "gray45", "gray55", "gray75", "gray92"),
             opacity = .85
           )
       }

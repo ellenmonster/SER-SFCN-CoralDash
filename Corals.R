@@ -157,12 +157,15 @@ FuncRecalcRS <- function(dat, RSyrs) {
   sub.dat[c("ReportingSite", "Site")] <- sapply(sub.dat[c("ReportingSite", "Site")], as.character)
   add.sites <- unique(subset(sub.dat, ReportingSite == Site, select = Site)) # these are the sites to add back after calculations
   recalc.RSdat <- subset(sub.dat, ReportingSite != Site & IsActive==1) # for sites summarized at RS level, only include the Active sites
-  recalc.RSdat %<>%
-    rowwise() %>%
-    mutate(TooEarly = Year < RSyrs$startyr[RSyrs$ReportingSite == ReportingSite]) %>%
-    filter(TooEarly == FALSE) %>%
-    select(-TooEarly) %>%
-    ungroup()
+  if(nrow(recalc.RSdat) > 0) {
+    recalc.RSdat %<>%
+      rowwise() %>%
+      mutate(TooEarly = Year < RSyrs$startyr[RSyrs$ReportingSite == ReportingSite]) %>%
+      filter(TooEarly == FALSE) %>%
+      select(-TooEarly) %>%
+      ungroup()
+  }
+  
   return.list <- list(add.sites, recalc.RSdat)
   return(return.list)
 }
@@ -248,7 +251,8 @@ Warn_list$UNKCount <- Err_counts %>%
   rename("Park_Site_Transect_Trip_Purpose" = "EventID", "% Unknown" = PercUNK)
 
 # Format data for analyses ----
-coral$BleachingCode[is.na(coral$BleachingCode) & coral$Category =="CORAL"] <- "UNBL"
+coral$BleachingCode[is.na(coral$BleachingCode) & coral$Category =="CORAL" & coral$SurvDate < "2005-10-01"] <- "NoData"
+coral$BleachingCode[is.na(coral$BleachingCode) & coral$Category =="CORAL" & coral$SurvDate >= "2005-10-01"] <- "UNBL"
 coral$BleachingCode[coral$BleachingCode == "BL" & coral$Category =="CORAL"] <- "BL1"
 coral$BleachingCode[coral$Category != "CORAL"] <- NA
 
@@ -488,7 +492,7 @@ bl_add.dat <- bl_site %>%
 
 Bleach <- rbind(bl_site, bl_RSdat, bl_add.dat) %>%
   arrange(SiteLev, RSS, SurvDate, BleachingCode)
-Bleach$BleachingCode <- factor(Bleach$BleachingCode, levels = c("UNBL", "BL1", "BL2", "BL3", "BL4"))
+Bleach$BleachingCode <- factor(Bleach$BleachingCode, levels = c("NoData", "UNBL", "BL1", "BL2", "BL3", "BL4"))
 
 # Add rest of data to mapdat ----
 PC_temp <- subset(PC_Site$Category, SiteLev == "SiteSurvID" & Sublevel == "CORAL", select = c("RSS", "SurvDate", "mean")) %>% # for each site and survey, the mean % coral
@@ -500,7 +504,7 @@ BleachRC <- Bleach %>%
   filter(SiteLev == "SiteSurvID") %>%
   select(RSS, Year, SurvDate, BleachingCode, RC) %>%
   mutate(RSS = as.character(RSS)) %>%
-  spread(key = BleachingCode, value = RC) %>%
+  spread(key = BleachingCode, value = RC, drop = FALSE, fill = 0) %>%
   full_join(PC_temp, by = c("RSS", "SurvDate"))
 
 mapdat2 <- mapdat %>%
