@@ -90,12 +90,13 @@ FuncBootGroup <- function(GroupID, GroupName, CalcRC, trans.dat, coral.sub, run_
   boot_temp2 <- boot_temp %>%
     add_tally() %>%  # number of transects per survey-site
     mutate(
+      NumCoralTrans = sum(!is.na(RC)),
       PCtot = sum(PC, na.rm = TRUE),
       PCmedian = quantile(PC, probs = 0.50, na.rm = TRUE),
       PCmean = PCtot/n, # mean % cover, averaged across transects
       RCmedian = quantile(RC, probs = 0.50, na.rm = TRUE),
       RCtot = ifelse(is.na(RCmedian), NA, sum(RC, na.rm = TRUE)), # if it's not a coral, then NA
-      RCmean = RCtot/n) %>%
+      RCmean = RCtot/NumCoralTrans) %>%
     select(-PC, -RC) %>%
     distinct() %>%
     arrange(RSS_SurvID, Sublevel, Year) %>%
@@ -177,10 +178,10 @@ coral <- read_csv(filenam)
 if(!is.null(sitesfilenam)) tbl_link <- read_csv(sitesfilenam)
 
 # # # <<<<<<<< TESTING >>>>>>>>>>>>>>
-# coral <- read_csv("~/Google Drive/NPS Monitoring/PROJECT TASKS/SFCN_Corals/data/DRTO_CoralVideo Summary by Transect.csv")
-# out_prefix="DRTO"
+# coral <- read_csv("Data_LOCAL_ONLY/demo_CoralDat.csv")
+# out_prefix="test"
 # run_parallel=TRUE
-# set_cores=4
+# set_cores=11
 
 coral$Date <- mdy(coral$Date)
 coral %<>%
@@ -286,7 +287,8 @@ if(nrow(missing_IsActive) > 0) stop("These data records do not have activity sta
 
 CalcRepSites <- !identical(coral.sub$Site, coral.sub$ReportingSite) # if TRUE, need to separately summarize by ReportingSite
 
-saveRDS(coral.sub, paste0(out_prefix, "_cleandat.RDS"))
+# Uncomment (i.e., remove the '#') the line below to output a CSV of the cleaned data
+# write.csv(coral.sub, paste0(out_prefix, "_cleandat.csv"), row.names = FALSE) 
 
 mapdat <- coral.sub %>%
   select(ReportingSiteName, ReportingSite, Site, Latitude, Longitude, Year, IsActive) %>%
@@ -341,7 +343,7 @@ for(x in group.var) {
     # These are the ones that are actually coral
     coral_categ <- coral.sub %>%
       select(c(x, "Category")) %>%
-      rename_(.dots = list("Sublevel" = x)) %>%
+      dplyr::rename("Sublevel" = x) %>%
       filter(Category == "CORAL") %>%
       select(-Category) %>%
       filter(!is.na(Sublevel)) %>% # get rid of the NA functional groups
@@ -349,7 +351,7 @@ for(x in group.var) {
   }
   
   trans.dat <- coral.sub[c(names(cov_template), "CountOfTaxon")] %>%
-    group_by_(.dots = names(cov_template)) %>%
+    group_by(.dots = names(cov_template)) %>%
     summarize(N = sum(CountOfTaxon, na.rm=TRUE)) %>%
     right_join(cov_template, by = names(cov_template)) %>%  # add the adjusted points column
     left_join(N.event, by = "EventID") %>%
@@ -357,7 +359,7 @@ for(x in group.var) {
            RC = round((N/CoralPoints)*100, 2)) %>% # RC is relative cover (denominator is the number of CORAL hits), calculated only for coral
     arrange(Site, SurvDate) %>%
     ungroup() %>%
-    rename_(.dots = list("Sublevel" = x))
+    dplyr::rename("Sublevel" = x)
   
   if(CalcRC) {
     trans.dat$RC[is.na(trans.dat$RC)] <- 0 # if there are no hits, then RC is 0
@@ -451,7 +453,7 @@ bl_template <- bl_template[complete.cases(bl_template),]
 
 bl_temp <- coral.sub[c(names(bl_template), "CountOfTaxon")] %>%
   right_join(bl_template, by = names(bl_template)) %>%  # add the adjusted points column
-  group_by_(.dots = names(bl_template)) %>%
+  group_by(.dots = names(bl_template)) %>%
   summarize(N = sum(CountOfTaxon, na.rm=TRUE)) %>%
   ungroup() %>%
   left_join(N.event, by = "EventID") 
@@ -467,7 +469,7 @@ bl_site <- bl_temp %>%
          RC = round((N/CoralPoints)*100, 2),
          SiteLev = "SiteSurvID") %>% 
   ungroup() %>%
-  rename(RSS = "Site") %>%
+  dplyr::rename(RSS = "Site") %>%
   select(SiteLev, everything())
 
 # By reporting site
@@ -482,7 +484,7 @@ bl_RSdat <- bl_sub.RSdat[[2]] %>%
          RC = round((N/CoralPoints)*100, 2),
          SiteLev = "RepSiteSurvID") %>% 
   ungroup() %>%
-  rename(RSS = "ReportingSite") %>%
+  dplyr::rename(RSS = "ReportingSite") %>%
   select(SiteLev, everything())
 
 # Merge the data from bl_site
@@ -496,13 +498,13 @@ Bleach$BleachingCode <- factor(Bleach$BleachingCode, levels = c("NoData", "UNBL"
 
 # Add rest of data to mapdat ----
 PC_temp <- subset(PC_Site$Category, SiteLev == "SiteSurvID" & Sublevel == "CORAL", select = c("RSS", "SurvDate", "mean")) %>% # for each site and survey, the mean % coral
-  rename("%Coral" = "mean") %>%
+  dplyr::rename("%Coral" = "mean") %>%
   mutate(`%NonCoral` = 100 - `%Coral`,
          RSS= as.character(RSS))
 
 BleachRC <- Bleach %>%
   filter(SiteLev == "SiteSurvID") %>%
-  select(RSS, Year, SurvDate, BleachingCode, RC) %>%
+  dplyr::select(RSS, SurvDate, BleachingCode, RC) %>%
   mutate(RSS = as.character(RSS)) %>%
   spread(key = BleachingCode, value = RC, drop = FALSE, fill = 0) %>%
   full_join(PC_temp, by = c("RSS", "SurvDate"))
