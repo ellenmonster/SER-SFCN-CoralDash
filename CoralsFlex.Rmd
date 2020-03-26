@@ -4,6 +4,7 @@ output:
   flexdashboard::flex_dashboard:
     vertical_layout: scroll
     orientation: columns
+    theme: sandstone   # theme options: default, cosmo, bootstrap, cerulean, journal, flatly, readable, spacelab, united, lumen, paper, sandstone, simplex, yeti
 runtime: shiny
 ---
 
@@ -50,25 +51,42 @@ source("Corals.R")
 
 Import
 ======================================
+
+Column {data-width=10}
+-------------------------------------
+
 Column {data-width=525}
 -------------------------------------
-#### Instructions for processing a raw data file (jump to Step 6 if you already have a summary RDS file)
+#### <font size="5"> Instructions for processing a raw data file (jump to Step 6 if you already have a summary RDS file)</font> 
 
-1. Create a coral data CSV file that summarizes the coral data by transect with these required columns (case-sensitive): *BleachingCode, Category, CountOfTaxonCode, Date, FunctionalGroup, Latitude, Longitude, ParkCode, Purpose, Site, SubCategory, TaxonCode, Transect, TripName, Year*
+<font size="4"> 
 
-2. Create a sites data CSV file that links reporting sites with sites and specifies if the sites are still active. The required colums are (case-sensitive): *ParkCode, Site, ReportingSite, ReportingSiteName, IsActive* (where "ReportingSiteName" is the full name corresponding with "ReportingSite", and "IsActive" = 1 for active sites and 0 for inactive sites)
+1.  Create a coral data CSV file that summarizes the coral data by transect with these required columns (case-sensitive): *BleachingCode, Category, CountOfTaxonCode, Date, FunctionalGroup, Latitude, Longitude, ParkCode, Purpose, Site, SubCategory, TaxonCode, Transect, TripName, Year*    
 
-3. For parallel (faster) processing, select the number of cores to use. Default is one less than the maximum number of cores detected on your computer.
+2.  Create a sites data CSV file that links reporting sites with sites and specifies if the sites are still active. The required colums are (case-sensitive): *ParkCode, Site, ReportingSite, ReportingSiteName, IsActive* (where "ReportingSiteName" is the full name corresponding with "ReportingSite", and "IsActive" = 1 for active sites and 0 for inactive sites)
 
-4. Enter a prefix to append to the output summary file.
+3.  For parallel (faster) processing, select the number of cores to use. Default is one less than the maximum number of cores detected on your computer.
+
+4.  Enter a prefix to append to the output summary file.
 
 5. Browse to and upload the coral and sites data files (CSV), then press the "Import and Process New Data" button.
 
-6. When data processing is completed, a summary data file will be output to the current working directory as an RDS with the name '(your prefix)_coralsummary.RDS'.
+6.  When data processing is completed, a summary data file will be output to the current working directory as an RDS with the name '(your prefix)_coralsummary.RDS'.
 
-#### Instructions for uploading a summary RDS file
+</font> 
 
-7. Browse to and upload the '(your prefix)_coralsummary.RDS' file, to generate summaries in the plot and table tabs.
+br()
+
+#### <font size="5"> Instructions for uploading a summary RDS file</font> 
+
+<font size="4"> 
+
+7.  Browse to and upload the '(your prefix)_coralsummary.RDS' file, to generate summaries in the plot and table tabs.
+
+</font> 
+
+Column {data-width=10}
+-------------------------------------
 
 Column {data-width=225}
 -------------------------------------
@@ -77,27 +95,30 @@ Column {data-width=225}
 ```{r select_raw_data}
 checkboxInput("use_parallel", label = "Use parallel processing?", value = TRUE)
 
-numericInput("num_cores", label = "Number of processing cores to use: ", min = 1, max = detectCores(), step = 1, value = detectCores()-1)
+numericInput("num_cores", label = "Number of processing cores to use: ", min = 1, max = detectCores(), step = 1, value = detectCores()-1, width = "100%")
 
-textInput("out_prefix", label = "Prefix to append to output files: ", value = "Temp")
+textInput("out_prefix", label = "Prefix to append to output files: ", value = paste0("corals", gsub(pattern = "-", replacement = "", x = Sys.Date()), "_"), width = "100%")
 
-fileInput("filenam", label = "Select a coral survey CSV file (make sure you've entered a file Prefix!)", accept = c('text/csv', 'text/comma-separated-values', '.csv'))
+fileInput("filenam", label = "Select a coral survey CSV file (make sure you've entered a file Prefix!)", accept = c('text/csv', 'text/comma-separated-values', '.csv'), width = "100%")
 
-fileInput("sitesfilenam", label = "Select a sites CSV file", accept = c('text/csv', 'text/comma-separated-values', '.csv'))
+fileInput("sitesfilenam", label = "Select a sites CSV file", accept = c('text/csv', 'text/comma-separated-values', '.csv'), width = "100%")
 
-actionButton("button_import", "IMPORT AND PROCESS NEW DATA", width = "300px")
+actionButton("button_import", "IMPORT AND PROCESS NEW DATA", width = "100%")
 
 observeEvent(eventExpr = input$button_import, {
   if(is.null(input$filenam$datapath))
-  {showModal(modalDialog(title = "Aaaack! No coral data selected!  Please select a file and try again"))}
-    if(is.null(input$sitesfilenam$datapath))
-  {showModal(modalDialog(title = "Aaaack! No sites data selected!  Please select a file and try again"))}
-    
+    {showModal(modalDialog(title = "Aaaack! No coral data selected!  Please select a file and try again"))}
+  validate(need(!is.null(input$filenam$datapath), message = FALSE))
+  
+  if(is.null(input$sitesfilenam$datapath))
+    {showModal(modalDialog(title = "Aaaack! No sites data selected!  Please select a file and try again"))}
+  validate(need(!is.null(input$sitesfilenam$datapath), message = FALSE))
+                
   withProgress(message = "Please be patient. Calculating something wonderful...", value = 0, {
     FuncCorals(filenam = input$filenam$datapath, sitesfilenam = input$sitesfilenam$datapath, out_prefix = input$out_prefix, run_parallel = input$use_parallel, set_cores = input$num_cores)
      showModal(modalDialog(
         title = "Done",
-        "You may now select the summary RDS file for viewing (use the input box below, titled 'Select a summary RDS file')"
+        paste0("A summary RDS file has been saved as '", input$out_prefix, ".RDS' in the current working directory, ", getwd(), ". You may now select it for viewing (use the input box below, titled 'Select a summary RDS file')")
       ))
     })
 })
@@ -106,7 +127,7 @@ observeEvent(eventExpr = input$button_import, {
 ### IMPORT A CORAL SUMMARY FILE {data-height=100}
 
 ```{r select_files}
-fileInput("summaryfile", label = "Select a summary RDS file", accept = c('.RDS'))
+fileInput("summaryfile", label = "Select a summary RDS file", accept = c('.RDS'), width = "100%")
 
 rv <- reactiveValues(CalcRepSites = NULL, Warn_list = NULL, PC_options = NULL, PC_Site = NULL, SS_PointCount = NULL, SS_PercCov = NULL, RC_Site = NULL, Bleach = NULL, mapdat = NULL)
   
@@ -138,6 +159,9 @@ Column
 **SURVEY TRIPS WITH PURPOSE OTHER THAN "ANNUAL" OR "EPISODIC"**
 *(These data are excluded from analyses)*
 ```{r warnings}
+
+br()
+
 renderTable({
   validate(need(!is.null(rv$Warn_list), message = FALSE))
   AltPurp <- rv$Warn_list$AltPurp
@@ -227,9 +251,12 @@ br()
 
 % Cover
 ======================================  
-Inputs {.sidebar data-width=250}
+Inputs {.sidebar data-width=275}
 -------------------------------------
 ```{r input_PC}
+
+br()
+
 actionButton("export_perccov_button", "Click to Export Plot Data", width = "95%")
 
 br()
@@ -434,7 +461,7 @@ renderTable({
 
 Cover Table
 ====================================== 
-Column {data-width=250}
+Inputs {.sidebar data-width=250}
 -------------------------------------
 ```{r input_tab}
 checkboxInput("tabactive", label = "Show active sites only", value = FALSE, width = "95%")
@@ -489,7 +516,7 @@ br()
 br()
 ```
 
-Column {vertical_layout: scroll data-width=500}
+Column {data-width=550;vertical_layout: scroll}
 -------------------------------------
 ### Point Counts by SITE-SURVEY
   
@@ -527,9 +554,12 @@ renderTable({
 
 Relative Cover
 ====================================== 
-Inputs {.sidebar data-width=250}
+Inputs {.sidebar data-width=275}
 -------------------------------------
 ```{r input_RC}
+
+br()
+
 actionButton("export_RC_button", "Click to Export Plot Data", width = "95%")
 
 br()
@@ -787,6 +817,9 @@ Bleaching
 Inputs {.sidebar data-width=200}
 -------------------------------------
 ```{r input_bleach}
+
+br()
+
 radioButtons("sel_blsitelev", 
              label = "Site level to summarize", 
              choiceNames = list("Reporting Site", "Site"),
@@ -902,7 +935,6 @@ renderUI({
     sliderTextInput("sel_MapSurvey", force_edges = TRUE, label = "Choose a survey event", choices = sort(as.character(unique(rv$Bleach$SurvDate))), selected = , dragRange = FALSE, width = "85%")
   }
 })
-
 br()
 
 checkboxInput("MapActive", label = "Show active sites only", value = FALSE)
@@ -916,7 +948,7 @@ radioButtons("sel_MapMetric",
              selected = "PercCoral")
 ```
 
-Column {vertical_layout: fill}
+Column {data-width=550 vertical_layout: fill}
 -------------------------------------
 *NOTE:  For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)*
 ```{r maps}
@@ -936,9 +968,9 @@ output$coralmap = renderLeaflet({
     maxLong <- max(MapDat_df$medLong, na.rm = TRUE)
     maxLat <- max(MapDat_df$medLat, na.rm = TRUE)
     
-    MapDat_df %<>%
+    MapDat2_df <- MapDat_df %>%
      filter(SurvDate == input$sel_MapSurvey) %>%
-     select(-c(ReportingSiteName, ReportingSite, IsActive, minyr, maxyr, Year))
+     select(-c(ReportingSiteName, ReportingSite, IsActive, minyr, maxyr))
   
   basemap <- leaflet() %>%
      addProviderTiles("Esri.NatGeoWorldMap")
@@ -948,7 +980,7 @@ output$coralmap = renderLeaflet({
        addMinicharts(
          lng = MapDat_df$medLong,
          lat = MapDat_df$medLat,
-         type = "auto",
+         type = "pie",
          width = 25,
          height = 25,
          transitionTime = 0,
@@ -967,7 +999,7 @@ output$coralmap = renderLeaflet({
             transitionTime = 0,
             layerId = MapDat_df$poptext,
             chartdata = as.matrix(MapDat_df[, c("NoData", "UNBL", "BL1", "BL2", "BL3", "BL4")]),
-            colorPalette = c("yellow", "gray25", "gray45", "gray55", "gray75", "gray92"),
+            colorPalette = c("#FFFF00", "#404040", "#737373", "#8C8C8C", "#BFBFBF", "#EBEBEB"),
             opacity = .85
           )
       }
