@@ -17,13 +17,9 @@ FuncBootGroup <- function(GroupID, GroupName, CalcRC, trans.dat, coral.sub, run_
     if(run_parallel) { # run in parallel. Boot.ci has a parallel processing function, but multidplyr does faster parallel processing here
       no_cores <- ifelse(set_cores > detectCores()-1, detectCores()-1, set_cores)
       
-      clust <- create_cluster(cores = no_cores)
-      
-      boot_temp4 <- boot_temp3 %>%
-        partition(cluster = clust) %>%
-        cluster_library("dplyr") %>%
-        cluster_library("purrr") %>%
-        cluster_library("boot")
+      clust <- new_cluster(no_cores)
+      boot_temp4 <- boot_temp3 %>% partition(clust)
+      cluster_library(cluster = clust, packages = c("dplyr", "purrr", "boot"))
       
       boot_temp4a <- boot_temp4 %>%
         mutate(

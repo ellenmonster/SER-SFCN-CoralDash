@@ -97,7 +97,7 @@ checkboxInput("use_parallel", label = "Use parallel processing?", value = TRUE)
 
 numericInput("num_cores", label = "Number of processing cores to use: ", min = 1, max = detectCores(), step = 1, value = detectCores()-1, width = "100%")
 
-textInput("out_prefix", label = "Prefix to append to output files: ", value = paste0(gsub(pattern = "-", replacement = "", x = Sys.Date())), width = "100%")
+textInput("out_prefix", label = "Prefix to append to output files: ", value = paste0("corals", gsub(pattern = "-", replacement = "", x = Sys.Date()), "_"), width = "100%")
 
 fileInput("filenam", label = "Select a coral survey CSV file (make sure you've entered a file Prefix!)", accept = c('text/csv', 'text/comma-separated-values', '.csv'), width = "100%")
 
@@ -980,7 +980,7 @@ output$coralmap = renderLeaflet({
        addMinicharts(
          lng = MapDat_df$medLong,
          lat = MapDat_df$medLat,
-         type = "auto",
+         type = "pie",
          width = 25,
          height = 25,
          transitionTime = 0,
