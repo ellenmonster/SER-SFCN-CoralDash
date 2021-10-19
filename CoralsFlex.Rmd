@@ -9,8 +9,11 @@ runtime: shiny
 ---
 
 ```{r global, include=FALSE}
+
 # (TO BEGIN) MAKE SURE THESE PACKAGES ARE INSTALLED AND UPDATED (note from June 2018) <<<<< -----
 # Remove the commenting (hashtag), then paste in console and execute. Will not work if you just remove the commenting and run the .Rmd script.
+# DO error capture if not reading coral or sites data in correctly. I don't know why it wasn't reading .csv sites file correctly.
+# Do Judd's requested updates IF this dashboard is going to be used
 
 # THESE SHOULD BE INSTALLED (IF ALREADY INSTALLED, MAKE SURE IT'S UPDATED AT LEAST TO THE SPECIFIED VERSION)
 # install.packages("flexdashboard") # v.0.5.1
@@ -36,7 +39,7 @@ rm(list=ls())
 
 ### Load libraries -----
 # Will automatically install any libraries it can't find
-packages <- c("flexdashboard", "shiny", "knitr", "gridExtra", "shinyWidgets", "leaflet", "plotly", "DT", "parallel", "rtf", "lubridate", "leaflet.minicharts", "multidplyr", "tidyverse", "htmlwidgets")
+packages <- c("flexdashboard", "shiny", "knitr", "gridExtra", "shinyWidgets", "leaflet", "plotly", "DT", "parallel", "rtf", "lubridate", "leaflet.minicharts", "multidplyr", "tidyverse", "htmlwidgets", "RSQLite", "multidplyr")
 package.check <- lapply(packages, FUN = function(x) {
   if (!require(x, character.only = TRUE)) {
     install.packages(x, dependencies = TRUE, repos = "http://cran.us.r-project.org")
@@ -71,17 +74,15 @@ Column {data-width=525}
 
 5. Browse to and upload the coral and sites data files (CSV), then press the "Import and Process New Data" button.
 
-6.  When data processing is completed, a summary data file will be output to the current working directory as an RDS with the name '(your prefix)_coralsummary.RDS'.
+6.  When data processing is completed, a summary data file will be output to the current working directory as an RDS with the name '(your prefix)_coralsummary.RDS'. PROCEED TO STEP #7 TO IMPORT THE NEWLY CREATED .RDS FILE.
 
 </font> 
 
-br()
-
-#### <font size="5"> Instructions for uploading a summary RDS file</font> 
+#### <font size="5"> Instructions for importing a summary RDS file</font> 
 
 <font size="4"> 
 
-7.  Browse to and upload the '(your prefix)_coralsummary.RDS' file, to generate summaries in the plot and table tabs.
+7.  Browse to and import the '(your prefix)_coralsummary.RDS' file, to generate summaries in the plot and table tabs.
 
 </font> 
 
