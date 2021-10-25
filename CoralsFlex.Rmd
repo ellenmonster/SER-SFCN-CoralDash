@@ -39,7 +39,7 @@ rm(list=ls())
 
 ### Load libraries -----
 # Will automatically install any libraries it can't find
-packages <- c("flexdashboard", "shiny", "knitr", "gridExtra", "shinyWidgets", "leaflet", "plotly", "DT", "parallel", "rtf", "lubridate", "leaflet.minicharts", "multidplyr", "tidyverse", "htmlwidgets", "RSQLite", "multidplyr")
+packages <- c("flexdashboard", "shiny", "knitr", "gridExtra", "shinyWidgets", "leaflet", "plotly", "DT", "parallel", "rtf", "lubridate", "leaflet.minicharts", "multidplyr", "tidyverse", "htmlwidgets", "RSQLite", "multidplyr", "Rcpp")
 package.check <- lapply(packages, FUN = function(x) {
   if (!require(x, character.only = TRUE)) {
     install.packages(x, dependencies = TRUE, repos = "http://cran.us.r-project.org")
@@ -50,6 +50,8 @@ package.check <- lapply(packages, FUN = function(x) {
 options(shiny.maxRequestSize = 20*1024^2) # allows data files up to 20 MB to be imported
 opts_chunk$set(root.dir = getwd())
 source("Corals.R")
+
+cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
 ```
 
 Import
@@ -300,15 +302,16 @@ renderUI({
       distinct()
     RSchoice <- sort(as.character(RStemp$ReportingSite))
     
-  checkboxGroupInput("sel_showRS", label = "Show results for these reporting sites", choices = RSchoice, selected = RSchoice, inline = FALSE)
+  checkboxGroupInput("sel_showRS", label = "Show results for these reporting sites", choices = RSchoice, selected = switch(is.null(input$sel_showRS)+1, input$sel_showRS, RSchoice), inline = FALSE)
   }
 })
 
 renderUI({
   if(!is.null(input$sel_showRS) & !is.null(input$sel_lev) & !is.null(rv$PC_Site)) {
-    checkboxGroupInput("sel_showyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$PC_Site[[input$sel_lev]], RSS %in% input$sel_showRS, select = Year))$Year)), selected = sort(as.character(unique(subset(rv$PC_Site[[input$sel_lev]], RSS %in% input$sel_showRS, select = Year))$Year)), inline = TRUE)
+    checkboxGroupInput("sel_showyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$PC_Site[[input$sel_lev]], RSS %in% input$sel_showRS, select = Year))$Year)), selected = switch(is.null(input$sel_showyrs)+1, input$sel_showyrs, sort(as.character(unique(subset(rv$PC_Site[[input$sel_lev]], RSS %in% input$sel_showRS, select = Year))$Year))), inline = TRUE)
   }
 })
+
 actionButton("PCYrsall_button", "Select All", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
 
 actionButton("PCYrsnone_button", "Select None", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
@@ -325,14 +328,15 @@ br()
 
 renderUI({
     selectInput("sel_lev", label = "Select grouping level", 
-            choices = levels(rv$PC_options$Level), selected = levels(rv$PC_options$Level)[1])
+            choices = levels(rv$PC_options$Level), selected = switch(is.null(input$sel_lev)+1, input$sel_lev, levels(rv$PC_options$Level)[1]))
   })
 
 renderUI({
   if(!is.null(input$sel_lev)) {
     sublev = rv$PC_options$Sublevel[rv$PC_options$Level == input$sel_lev] %>%
     as.character()
-    selectInput("sel_sublev", label = "Select sublevel", choices = sublev, selected = sublev[1])}
+    sublev_default <- ifelse("CORAL" %in% sublev, "CORAL", sublev[1])
+    selectInput("sel_sublev", label = "Select sublevel", choices = sublev, selected = switch(is.null(input$sel_sublev)+1, ifelse(input$sel_sublev %in% sublev, input$sel_sublev, sublev_default), sublev_default))}
   })
 
 checkboxInput("sel_episodic", label = "Include episodic survey data", value = TRUE)
@@ -349,8 +353,18 @@ radioButtons("sel_error",
              choiceValues = list("95%CI", "SE"),
              selected = "95%CI",
              inline = TRUE)
+
+tags$div(renderText({ 
+  shiny::req(!is.null(input$sel_error))
+
+  char_incomp <- rv_param_temp$plotDat %>% dplyr::group_by(CharacteristicName) %>% dplyr::summarize(num_units = length(unique(na.omit(ResultMeasure.MeasureUnitCode)))) %>% dplyr::ungroup() %>% dplyr::filter(num_units > 1) %>% .$CharacteristicName
+
+  if(input$sel_error == "SE") {
+    paste0("WARNING!! SE is valid for % cover only if individual transect data are approximately normally distributed. SE error bars that extend below zero are one indication that SE calculations are not appropriate for your data.")  # Post a warning about using SE
+  }
+}), style = "font-size:14px; color:red; font-weight:bold;")
+
 ```
-*\*SE error bars may extend below zero -- SE is valid only if individual transect data (% cover) are approximately normally distributed.*
 
 ```{r input_PC3}
 br()
@@ -358,7 +372,11 @@ checkboxInput("PC_blackwhite", label = "Plot in grayscale (can only handle up to
 
 numericInput("PCx_int", label = "Increment for x-axis ticks", min = 1, max = 5, step = 1, value = 1)
 
-numericInput("PCy_int", label = "Increment for y-axis ticks", min = 5, max = 100, step = 5, value = 10)
+renderUI({
+  numericInput("PCy_max", label = "Set y-axis maximum", min = 5, max = 105, step = 5, value = switch(is.null(input$PCy_max)+1, input$PCy_max, NULL))
+})
+
+# numericInput("PCy_int", label = "Increment for y-axis ticks", min = 5, max = 100, step = 5, value = 10)
 
 textInput("PCplot_title", "Enter text to use for plot title", value = "")
 ```
@@ -415,12 +433,7 @@ renderPlotly({
   validate(need(nrow(dat_PC3()) > 0, message = FALSE))
   plotly_PC <-
     ggplot(data = dat_PC3(), aes(x = SurvDate, y = y_val, colour = RSS, shape = RSS)) +
-    geom_point() +
-    scale_y_continuous(breaks = seq(0, 100, by = input$PCy_int), labels = seq(0, 100, by = input$PCy_int), limits = c(-5, 100)) +
-    scale_x_date(date_labels = "%Y", date_breaks = paste0(input$PCx_int, " years")) +
-    labs(title = input$PCplot_title, x = "Year", y = paste0(input$sel_metric, " % Cover (", input$sel_error, ")")) +
-    theme_bw(base_size = 12) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    geom_point() 
 
   if(nrow(subset(dat_PC3(), NumTransect >=8)) > 0)
     plotly_PC <- plotly_PC +
@@ -431,14 +444,22 @@ renderPlotly({
     plotly_PC <- plotly_PC +
     geom_line(data = subset(dat_PC3(), NumTransect < 8), linetype = "dotted") 
   
-  if(input$PC_blackwhite) plotly_PC <- plotly_PC + scale_colour_grey()
+  if(input$PC_blackwhite) {
+    plotly_PC <- plotly_PC + scale_colour_grey()
+  } else {
+    plotly_PC <- plotly_PC + scale_color_manual(values = cbp1)
+  }
+  
+  plotly_PC <- plotly_PC +
+    expand_limits(y = switch(is.null(input$PCy_max)+1, c(0, input$PCy_max, 0), 0)) +
+    scale_x_date(date_labels = "%Y", date_breaks = paste0(input$PCx_int, " years")) +
+    labs(title = switch((nchar(input$PCplot_title)==0)+1, input$PCplot_title, paste0(input$sel_lev, ": ", input$sel_sublev)), x = "Year", y = paste0(input$sel_metric, " % Cover (", input$sel_error, ")")) +
+    theme_bw(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
   if(input$plotwarn_on) {
-    ggplotly(plotly_PC) %>% 
- layout(annotations = 
-          list(y = 101, showarrow = FALSE,
-               text = "(NOTES: X-axis tick marks Jan. 1 of each year. If fewer than 8 transects, lines are dotted)",
-               font=list(size=10, color="red"))) # Plotly doesn't do subtitles at this point
+    ggplotly(plotly_PC +
+               labs(subtitle = "(NOTES: X-axis tick marks Jan. 1 of each year. If fewer than 8 transects, lines are dotted)")) # Plotly doesn't do subtitles at this point
   } else {
     ggplotly(plotly_PC)
   }
@@ -610,7 +631,7 @@ renderUI({
 
 renderUI({
   if(!is.null(input$sel_RCsite) & !is.null(input$sel_RCgrouplev) & !is.null(rv$RC_Site)) {
-    checkboxGroupInput("sel_showRCyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$RC_Site[[input$sel_RCgrouplev]], RSS == input$sel_RCsite, select = Year))$Year)), selected = sort(as.character(unique(subset(rv$RC_Site[[input$sel_RCgrouplev]], RSS == input$sel_RCsite, select = Year))$Year)), inline = TRUE)
+    checkboxGroupInput("sel_showRCyrs", label = "Show results for these years", choices = sort(as.character(unique(subset(rv$RC_Site[[input$sel_RCgrouplev]], RSS == input$sel_RCsite, select = Year))$Year)), selected = switch(is.null(input$sel_showRCyrs)+1, input$sel_showRCyrs, sort(as.character(unique(subset(rv$RC_Site[[input$sel_RCgrouplev]], RSS == input$sel_RCsite, select = Year))$Year))), inline = TRUE)
   }
 })
 actionButton("RCYrsall_button", "Select All", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
@@ -704,7 +725,11 @@ checkboxInput("RC_blackwhite", label = "Plot in grayscale (can only handle up to
 
 numericInput("RCx_int", label = "Increment for x-axis ticks", min = 1, max = 5, step = 1, value = 1)
 
-numericInput("RCy_int", label = "Increment for y-axis ticks", min = 5, max = 100, step = 5, value = 10)
+renderUI({
+  numericInput("RCy_max", label = "Set y-axis maximum", min = 5, max = 105, step = 5, value = switch(is.null(input$RCy_max)+1, input$RCy_max, NULL))
+})
+
+# numericInput("RCy_int", label = "Increment for y-axis ticks", min = 5, max = 100, step = 5, value = 10)
 
 textInput("RCplot_title", "Enter text to use for plot title", value = "")
 ```
@@ -752,9 +777,11 @@ renderPlotly({
   plotly_RC <- 
     ggplot(data = dat_RC3(), aes(x = SurvDate, y = y_val, colour = Sublevel, shape = Sublevel)) +
     geom_point() +
-    scale_y_continuous(breaks = seq(0, 100, by = input$RCy_int), labels = seq(0, 100, by = input$RCy_int), limits = c(-5, 100)) +
+    expand_limits(y = switch(is.null(input$RCy_max)+1, c(0, input$RCy_max, 0), 0)) +
+    # scale_y_continuous(expand = c(0, 0), breaks = seq(0, NA, by = input$RCy_int), labels = seq(0, NA, by = input$RCy_int), limits = c(-5, NA)) +
+    # scale_y_continuous(expand = c(0, 0)) +
     scale_x_date(date_labels = "%Y", date_breaks = paste0(input$RCx_int, " years")) +
-    labs(title = input$RCplot_title, x = "Year", y = paste0(input$sel_RCmetric, " % Relative Cover (", input$sel_RCerror, ")")) +
+    labs(title = switch(is.null(input$PCplot_title)+1, input$PCplot_title, paste0(input$sel_lev, ": ", input$sel_sublev)), x = "Year", y = paste0(input$sel_RCmetric, " % Relative Cover (", input$sel_RCerror, ")")) +
     theme_bw(base_size = 12) +
     theme(legend.title = element_blank(), 
           axis.text.x = element_text(angle = 45, hjust = 1))
@@ -768,7 +795,11 @@ renderPlotly({
     plotly_RC <- plotly_RC +
     geom_line(data = subset(dat_RC3(), NumTransect < 8), linetype = "dotted")
   
-  if(input$RC_blackwhite) plotly_RC <- plotly_RC + scale_colour_grey()
+  if(input$RC_blackwhite) {
+    plotly_RC <- plotly_RC + scale_colour_grey()
+  } else {
+    plotly_RC <- plotly_RC + scale_color_manual(values = cbp1)
+  }
   
   if(input$plotwarn_on) {
   ggplotly(plotly_RC) %>%
