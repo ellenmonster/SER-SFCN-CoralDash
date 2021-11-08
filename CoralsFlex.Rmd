@@ -357,8 +357,6 @@ radioButtons("sel_error",
 tags$div(renderText({ 
   shiny::req(!is.null(input$sel_error))
 
-  char_incomp <- rv_param_temp$plotDat %>% dplyr::group_by(CharacteristicName) %>% dplyr::summarize(num_units = length(unique(na.omit(ResultMeasure.MeasureUnitCode)))) %>% dplyr::ungroup() %>% dplyr::filter(num_units > 1) %>% .$CharacteristicName
-
   if(input$sel_error == "SE") {
     paste0("WARNING!! SE is valid for % cover only if individual transect data are approximately normally distributed. SE error bars that extend below zero are one indication that SE calculations are not appropriate for your data.")  # Post a warning about using SE
   }
@@ -381,9 +379,9 @@ renderUI({
 textInput("PCplot_title", "Enter text to use for plot title", value = "")
 ```
 
-Column {data-width=500}
+Trends in Cover {.tabset .tabset-fade data-width=500}
 -------------------------------------
-### Trends in % Cover
+### Summary of % Cover
   
 ```{r plot_PC}
 dat_PC3 <- reactive({
@@ -455,7 +453,8 @@ renderPlotly({
     scale_x_date(date_labels = "%Y", date_breaks = paste0(input$PCx_int, " years")) +
     labs(title = switch((nchar(input$PCplot_title)==0)+1, input$PCplot_title, paste0(input$sel_lev, ": ", input$sel_sublev)), x = "Year", y = paste0(input$sel_metric, " % Cover (", input$sel_error, ")")) +
     theme_bw(base_size = 12) +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.title = element_blank())
 
   if(input$plotwarn_on) {
     ggplotly(plotly_PC +
@@ -511,13 +510,13 @@ renderUI({
 actionButton("rtf_button", "Click to Export Tables", width = "95%")
 
 observeEvent(eventExpr = input$rtf_button, {
-  rtffile <- RTF(paste0(input$sel_tabsite, "_", input$sel_tabsurv, ".doc"), width = 11, height = 8.5, font.size = 10, omi = c(1, 0.5, 1, 0.5))
-  addHeader(rtffile, title = paste0(input$sel_tabsite, " (", input$sel_tabsurv, ")"), subtitle = "Point Counts", font.size = 14)
-  addTable(rtffile, data_point(), col.justify = "C", header.col.justify = "C", row.names = TRUE)
-  addPageBreak(rtffile, width = 10, height = 8.5, omi = c(1, 0.5, 1, 0.5))
-  addHeader(rtffile, title = paste0(input$sel_tabsite, " (", input$sel_tabsurv, ")"), subtitle = "% Cover", font.size = 14)
-  addTable(rtffile, data_perccov(), col.justify = "C", header.col.justify = "C", row.names = TRUE)
-  done(rtffile)
+  rtffile <- rtf::RTF(paste0(input$sel_tabsite, "_", input$sel_tabsurv, ".doc"), width = 11, height = 8.5, font.size = 10, omi = c(1, 0.5, 1, 0.5))
+  rtf::addHeader(rtffile, title = paste0(input$sel_tabsite, " (", input$sel_tabsurv, ")"), subtitle = "Point Counts", font.size = 14)
+  rtf::addTable(rtffile, data_point(), col.justify = "C", header.col.justify = "C", row.names = TRUE)
+  rtf::addPageBreak(rtffile, width = 10, height = 8.5, omi = c(1, 0.5, 1, 0.5))
+  rtf::addHeader(rtffile, title = paste0(input$sel_tabsite, " (", input$sel_tabsurv, ")"), subtitle = "% Cover", font.size = 14)
+  rtf::addTable(rtffile, data_perccov(), col.justify = "C", header.col.justify = "C", row.names = TRUE)
+  rtf::done(rtffile)
   showModal(modalDialog(
     title = "Done",
     paste0("The tables have been saved as ", input$sel_tabsite, "_", input$sel_tabsurv, ".doc in the current working directory, ", getwd())
@@ -562,9 +561,11 @@ renderTable({
 ```{r tab_perccov}
 data_perccov <- reactive({
   if(!is.null(input$sel_tabsite) & !is.null(input$sel_tabsurv)) {
+   
     req(unique(na.omit(rv$PC_Site$Taxon$RSS_SurvID[rv$PC_Site$Taxon$RSS == input$sel_tabsite & rv$PC_Site$Taxon$SurvDate == input$sel_tabsurv])), cancelOutput = TRUE)
   perccov <- rv$SS_PercCov[[unique(na.omit(rv$PC_Site$Taxon$RSS_SurvID[rv$PC_Site$Taxon$RSS == input$sel_tabsite & rv$PC_Site$Taxon$SurvDate == input$sel_tabsurv]))]]
   perccov
+
   } 
   })
 
