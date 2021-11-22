@@ -10,35 +10,11 @@ runtime: shiny
 
 ```{r global, include=FALSE}
 
-# (TO BEGIN) MAKE SURE THESE PACKAGES ARE INSTALLED AND UPDATED (note from June 2018) <<<<< -----
-# Remove the commenting (hashtag), then paste in console and execute. Will not work if you just remove the commenting and run the .Rmd script.
-# DO error capture if not reading coral or sites data in correctly. I don't know why it wasn't reading .csv sites file correctly.
-# Do Judd's requested updates IF this dashboard is going to be used
-
-# THESE SHOULD BE INSTALLED (IF ALREADY INSTALLED, MAKE SURE IT'S UPDATED AT LEAST TO THE SPECIFIED VERSION)
-# install.packages("flexdashboard") # v.0.5.1
-# install.packages("shiny") # v.1.1.0
-# install.packages("leaflet") # v.2.0.1
-# install.packages("knitr") # v.1.20
-# install.packages("rmarkdown") # v.1.10
-# install.packages("rtf") # v.0.4.13
-# install.packages("gridExtra") # v.2.3
-# install.packages("shinyWidgets") # v.0.4.3
-# install.packages("tidyverse") # v.1.2.1
-# install.packages("leaflet.minicharts") # v.0.5.4
-
-# THESE SHOULD BE UPDATED VIA GITHUB, WHICH HAS A MORE RECENT VERSION THAN CRAN (AS OF JUNE 2018)
-# library(devtools)
-# devtools::install_github("hadley/multidplyr") # v.0.0.0.9000 (as of June 2018, not available from CRAN)
-# devtools::install_github("hadley/ggplot2") # v.2.2.1.9000
-# devtools::install_github("ramnathv/htmlwidgets") # v.1.2.1
-# devtools::install_github("ropensci/plotly") # v.4.7.1.9000
-# (END) MAKE SURE PACKAGES ARE INSTALLED AND UPDATED <<<<< -----
-
 rm(list=ls())
 
 ### Load libraries -----
-# Will automatically install any libraries it can't find
+# Will automatically install any packages it can't find
+
 packages <- c("flexdashboard", "shiny", "knitr", "gridExtra", "shinyWidgets", "leaflet", "plotly", "DT", "parallel", "rtf", "lubridate", "leaflet.minicharts", "multidplyr", "tidyverse", "htmlwidgets", "RSQLite", "multidplyr", "Rcpp")
 package.check <- lapply(packages, FUN = function(x) {
   if (!require(x, character.only = TRUE)) {
@@ -48,7 +24,6 @@ package.check <- lapply(packages, FUN = function(x) {
 })
 
 options(shiny.maxRequestSize = 20*1024^2) # allows data files up to 20 MB to be imported
-opts_chunk$set(root.dir = getwd())
 source("Corals.R")
 
 cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
@@ -427,7 +402,7 @@ dat_PC3 <- reactive({
     }
 })
 
-renderPlotly({
+plotly::renderPlotly({
   validate(need(nrow(dat_PC3()) > 0, message = FALSE))
   plotly_PC <-
     ggplot(data = dat_PC3(), aes(x = SurvDate, y = y_val, colour = RSS, shape = RSS)) +
@@ -773,7 +748,7 @@ dat_RC3 <- reactive({
   }
 })
 
-renderPlotly({
+plotly::renderPlotly({
   validate(need(nrow(dat_RC3()) > 0, message = FALSE))
   plotly_RC <- 
     ggplot(data = dat_RC3(), aes(x = SurvDate, y = y_val, colour = Sublevel, shape = Sublevel)) +
@@ -890,7 +865,7 @@ Column {data-width=550}
   
 ```{r plot_bleachPC}
 dat_bleach <- reactive({
-  if(!is.null(rv$Bleach) & !is.null(input$sel_blsite)) {
+  if(!is.null(rv$Bleach) & !is.null(input$sel_blsitelev) & !is.null(input$sel_blsite) & !is.null(input$sel_blepisodic)) {
   
   temp_bleach <- subset(rv$Bleach, SiteLev == input$sel_blsitelev & RSS == input$sel_blsite) %>%
     arrange(SurvDate)

@@ -6,7 +6,7 @@
 packages <- c("units", "tidyverse", "lubridate", "magrittr", "boot", "parallel", "multidplyr")
 package.check <- lapply(packages, FUN = function(x) {
   if (!require(x, character.only = TRUE)) {
-    install.packages(x, dependencies = TRUE, repos = "http://cran.us.r-project.org")
+    # install.packages(x, dependencies = TRUE, repos = "http://cran.us.r-project.org")
     library(x, character.only = TRUE)
   }
 })
@@ -212,8 +212,8 @@ Warn_list$TransCount <- coral %>%
   group_by(Site, SurvDate) %>%
   arrange(Site, SurvDate) %>%
   summarize(NumTransects = n()) %>%
-  filter(!NumTransects %in% c(4, 20))
-Warn_list$TransCount$SurvDate <- lubridate::ymd(Warn_list$TransCount$SurvDate)
+  filter(Purpose %in% c("Annual", "Episodic") & !NumTransects %in% c(4, 20)) # 'off' transect counts only matters for annual or episodic surveys
+Warn_list$TransCount$SurvDate <- as.character(lubridate::ymd(Warn_list$TransCount$SurvDate)) # renderTable does not play nice with dates--need to format as character
 Warn_list$TransCount %<>% rename("Survey Date" = "SurvDate")
 
 Err_counts <- coral %>%
