@@ -212,9 +212,9 @@ Warn_list$TransCount <- coral %>%
   group_by(Site, SurvDate) %>%
   arrange(Site, SurvDate) %>%
   summarize(NumTransects = n()) %>%
-  filter(Purpose %in% c("Annual", "Episodic") & !NumTransects %in% c(4, 20)) # 'off' transect counts only matters for annual or episodic surveys
-Warn_list$TransCount$SurvDate <- as.character(lubridate::ymd(Warn_list$TransCount$SurvDate)) # renderTable does not play nice with dates--need to format as character
-Warn_list$TransCount %<>% rename("Survey Date" = "SurvDate")
+  filter(Purpose %in% c("Annual", "Episodic") & !NumTransects %in% c(4, 20)) %>% # 'off' transect counts only matters for annual or episodic surveys
+  dplyr::mutate(SurvDate = lubridate::ymd(SurvDate)) %>% # renderTable does not play nice with dates--need to format as character
+  dplyr::rename("Survey Date" = "SurvDate")
 
 Err_counts <- coral %>%
   group_by(EventID) %>%

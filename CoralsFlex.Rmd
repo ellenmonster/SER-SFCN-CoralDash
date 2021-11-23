@@ -15,7 +15,7 @@ rm(list=ls())
 ### Load libraries -----
 # Will automatically install any packages it can't find
 
-packages <- c("flexdashboard", "shiny", "knitr", "gridExtra", "shinyWidgets", "leaflet", "plotly", "DT", "parallel", "rtf", "lubridate", "leaflet.minicharts", "multidplyr", "tidyverse", "htmlwidgets", "RSQLite", "multidplyr", "Rcpp")
+packages <- c("flexdashboard", "shiny", "knitr", "gridExtra", "shinyWidgets", "leaflet", "plotly", "DT", "parallel", "rtf", "lubridate", "leaflet.minicharts", "multidplyr", "tidyverse", "htmlwidgets", "RSQLite", "multidplyr", "Rcpp", "reactable")
 package.check <- lapply(packages, FUN = function(x) {
   if (!require(x, character.only = TRUE)) {
     install.packages(x, dependencies = TRUE, repos = "http://cran.us.r-project.org")
@@ -178,6 +178,7 @@ renderTable({
   validate(need(!is.null(rv$Warn_list), message = FALSE))
   TransCount <- rv$Warn_list$TransCount
   validate(need(nrow(TransCount) > 0, "No warnings to show"))
+  TransCount$`Survey Date` <- as.character(lubridate::ymd(TransCount$`Survey Date`)) # renderTable does not play nice with dates--need to format as character
   TransCount
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
@@ -354,10 +355,12 @@ renderUI({
 textInput("PCplot_title", "Enter text to use for plot title", value = "")
 ```
 
-Trends in Cover {.tabset .tabset-fade data-width=500}
+Trends in Cover
 -------------------------------------
 ### Summary of % Cover
-  
+
+####
+
 ```{r plot_PC}
 dat_PC3 <- reactive({
   if(!is.null(input$sel_showRS) & !is.null(rv$PC_Site) & !is.null(input$sel_lev) & !is.null(input$sel_sublev) & !is.null(input$sel_showyrs)) {
@@ -398,12 +401,14 @@ dat_PC3 <- reactive({
     select(RSS, Year, SurvDate, NumTransect, y_val = mean, y_low, y_high)
   
   dat_PC2 %<>% arrange(RSS, Year, SurvDate)
+  # saveRDS(dat_PC2, "temp_dat_PC3.RDS") # <<<<<<<<<<<<<<<<<<<
   dat_PC2
     }
 })
 
 plotly::renderPlotly({
   validate(need(nrow(dat_PC3()) > 0, message = FALSE))
+ 
   plotly_PC <-
     ggplot(data = dat_PC3(), aes(x = SurvDate, y = y_val, colour = RSS, shape = RSS)) +
     geom_point() 
@@ -440,19 +445,41 @@ plotly::renderPlotly({
 })
 ```
 
-### Data Table for % Cover Plots
+####
 
-```{r tab_PCdat}
-renderTable({
+```{r summarize_cover}
+output$table_perc_cover <- renderReactable({
+  
   validate(need(!is.null(dat_PC3()), message = FALSE))
-  dat_tab <- dat_PC3() 
-  colnames(dat_tab)[colnames(dat_tab)=="y_val"] <- input$sel_metric
-  colnames(dat_tab)[colnames(dat_tab)=="y_low"] <- paste0(input$sel_error, "_low")
-  colnames(dat_tab)[colnames(dat_tab)=="y_high"] <- paste0(input$sel_error, "_high")
-  dat_tab$SurvDate <- format(dat_tab$SurvDate,'%Y-%m-%d')
-  dat_tab
-  }, align = "c", na = "--", include.rownames = FALSE
-  )
+  tab_perc_cov <- dat_PC3() 
+  
+  tab_perc_cov$SurvDate <- lubridate::ymd(tab_perc_cov$SurvDate)
+    
+  reactable(
+    tab_perc_cov,
+    columns = list(
+      RSS = colDef(width = 100),
+      Year = colDef(name = "Survey Year", width = 100, align = "center"),
+      SurvDate = colDef(name = "Survey Date", width = 100, align = "center"),
+      NumTransect = colDef(name = "# of Transects", width = 100, align = "center"),
+      y_val = colDef(name = input$sel_metric, width = 100, align = "center"),
+      y_low = colDef(name = paste0(input$sel_error, "_low"), width = 100, align = "center"),
+      y_high = colDef(name = paste0(input$sel_error, "_high"), width = 100, align = "center")
+      ),
+    columnGroups = list(
+      colGroup(name = paste0(input$sel_metric, " Summary Across Transects"), columns = c("y_val", "y_low", "y_high"))
+      ),
+    resizable = TRUE, 
+    filterable = TRUE,
+    striped = TRUE,
+    highlight = FALSE,
+    showSortIcon = TRUE,
+    compact = TRUE,
+    bordered = TRUE,
+    showPageSizeOptions = TRUE)
+})
+reactableOutput("table_perc_cover")
+tags$style("#table_perc_cover{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ```
 
 Cover Table
@@ -800,7 +827,7 @@ renderTable({
       group_by(SurvDate, NumTransect) %>%
       distinct() %>%
       arrange(SurvDate)
-    RCsamp$SurvDate <- format(RCsamp$SurvDate,'%Y-%m-%d')
+    RCsamp$SurvDate <- lubridate::ymd(RCsamp$SurvDate)
     RCsamp
   }, align = "c", include.rownames = FALSE)
 ```
@@ -814,7 +841,7 @@ renderTable({
   colnames(dat_RCtab)[colnames(dat_RCtab)=="y_val"] <- input$sel_RCmetric
   colnames(dat_RCtab)[colnames(dat_RCtab)=="y_low"] <- paste0(input$sel_RCerror, "_low")
   colnames(dat_RCtab)[colnames(dat_RCtab)=="y_high"] <- paste0(input$sel_RCerror, "_high")
-  dat_RCtab$SurvDate <- format(dat_RCtab$SurvDate,'%Y-%m-%d')
+  dat_RCtab$SurvDate <- lubridate::ymd(dat_RCtab$SurvDate)
   dat_RCtab
   }, align = "c", na = "--", include.rownames = FALSE
   )
