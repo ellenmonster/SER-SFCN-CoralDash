@@ -173,7 +173,7 @@ coral <- read_csv(filenam)
 if(!is.null(sitesfilenam)) tbl_link <- read_csv(sitesfilenam)
 
 # # # <<<<<<<< TESTING >>>>>>>>>>>>>>
-# coral <- read_csv("Data_LOCAL_ONLY/demo_CoralDat.csv")
+# coral <- read_csv("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- read_csv("Data_LOCAL_ONLY/demo_CoralDat.csv")
 # out_prefix="test"
 # run_parallel=TRUE
 # set_cores=11
@@ -270,8 +270,8 @@ if(!"IsActive" %in% colnames(coral.sub) & exists("tbl_link")) {
 
 coral.sub %<>%
   mutate(RepSiteSurvID = paste0(ParkCode, "_", ReportingSite, "_", TripName)) %>%
-  dplyr::select(Year, SurvDate, ParkCode, Site, Transect, Latitude, Longitude, Taxon, BleachingCode, Category, Subcategory, FunctionalGroup, CountOfTaxon, EventID, RepSiteSurvID, SiteSurvID, TripName, Purpose, ReportingSite, ReportingSiteName, IsActive) %>%  # keep these columns
-  mutate_if(is.character, as.factor)
+  dplyr::select(Year, SurvDate, ParkCode, Site, Transect, Latitude, Longitude, Taxon, BleachingCode, Category, Subcategory, FunctionalGroup, CountOfTaxon, EventID, RepSiteSurvID, SiteSurvID, TripName, Purpose, ReportingSite, ReportingSiteName, IsActive) 
+# %>%  mutate_if(is.character, as.factor)
 
 # STOP-Error check--make sure all records have associated Reporting Site and Activity Status
 missing_RS <- coral.sub[is.na(coral.sub$ReportingSite), ] %>%
@@ -310,13 +310,13 @@ RS_startyr <- mapdat %>%
 # Calculate adjusted total number of points and number of coral points per survey-transect ----
 N.event <- coral.sub %>%
   group_by(EventID) %>%
-  summarize(AdjPoints = sum(CountOfTaxon, na.rm=TRUE))  # use for denominator
+  summarize(AdjPoints = sum(CountOfTaxon, na.rm=TRUE))  # use for denominator. This is the number of hits of "something"
 N.coral <- coral.sub %>%
   filter(Category == "CORAL") %>%
   group_by(EventID) %>%
-  summarize(CoralPoints = sum(CountOfTaxon, na.rm=TRUE))   # use for denominator of relative percent cover
+  summarize(CoralPoints = sum(CountOfTaxon, na.rm=TRUE))   # use for denominator of relative percent cover. This is the number of hits of "something coral"
 N.event %<>% left_join(N.coral, by = "EventID")
-N.event$CoralPoints[is.na(N.event$CoralPoints)] <- 0
+N.event$CoralPoints[is.na(N.event$CoralPoints)] <- 0 # if no coral hits for an event, replace the NA with zero
 
 # Calculate percent cover and relative cover by different grouping variables ----
 group.var <- c("Taxon", "Category", "Subcategory", "FunctionalGroup", "BleachingCode")
@@ -326,7 +326,7 @@ RC_Site <- vector("list", length = 2)
 names(RC_Site) <- c("Taxon", "FunctionalGroup")
   
 for(x in group.var) {
-  CalcRC <- x %in% names(RC_Site) # for these categories, also calculate relative cover
+  CalcRC <- x %in% names(RC_Site) # for these groupings, also calculate relative cover
   
   incProgress(1/(length(group.var) + 1987), detail = paste0(" Bootstrapping 95% CI for each level of ", x)) # This updates the progress bar when the Rmarkdown is executed. Comment it out if running this script alone.
   
@@ -336,7 +336,7 @@ for(x in group.var) {
   # Summarize by SURVEY-TRANSECT
   
   if(CalcRC) {
-    # These are the ones that are actually coral
+    # Calculate relative cover only for coral taxa and coral functional groups
     coral_categ <- coral.sub %>%
       dplyr::select(c(x, "Category")) %>%
       dplyr::rename("Sublevel" = x) %>%
@@ -517,8 +517,8 @@ PC_options <- rbind(
   data.frame(Level = "FunctionalGroup", Sublevel = unique(coral.sub$FunctionalGroup), stringsAsFactors = FALSE),
   data.frame(Level = "Taxon", Sublevel = unique(coral.sub$Taxon), stringsAsFactors = FALSE))
 PC_options <- PC_options[complete.cases(PC_options),]
-PC_options <- arrange(PC_options, Level, Sublevel) %>%
-  mutate_if(is.character, as.factor)
+PC_options <- arrange(PC_options, Level, Sublevel) 
+# %>% mutate_if(is.character, as.factor)
 
 out.list <- list(CalcRepSites = CalcRepSites,
                  Warn_list = Warn_list,
