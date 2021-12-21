@@ -3,13 +3,10 @@
 
 # Load packages ----
 # Look for packages on local machine, install if necessary, then load all
-packages <- c("units", "tidyverse", "lubridate", "magrittr", "boot", "parallel", "multidplyr")
-package.check <- lapply(packages, FUN = function(x) {
-  if (!require(x, character.only = TRUE)) {
-    # install.packages(x, dependencies = TRUE, repos = "http://cran.us.r-project.org")
-    library(x, character.only = TRUE)
-  }
-})
+pkgList_pre <- c("units", "tidyverse", "lubridate", "magrittr", "boot", "parallel", "multidplyr")
+inst_pre <- pkgList_pre %in% installed.packages()
+if (length(pkgList_pre[!inst_pre]) > 0) install.packages(pkgList_pre[!inst_pre],dep=TRUE)
+lapply(pkgList_pre, library, character.only = TRUE)
 
 FuncBootGroup <- function(GroupID, GroupName, CalcRC, trans.dat, coral.sub, run_parallel, set_cores) {
   
@@ -172,12 +169,12 @@ FuncCorals <- function(filenam, sitesfilenam = NULL, out_prefix, run_parallel, s
 coral <- read_csv(filenam)
 if(!is.null(sitesfilenam)) tbl_link <- read_csv(sitesfilenam)
 
-# # # <<<<<<<< TESTING >>>>>>>>>>>>>>
-# coral <- read_csv("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- read_csv("Data_LOCAL_ONLY/demo_CoralDat.csv")
-# out_prefix="test"
-# run_parallel=TRUE
-# set_cores=11
-# tbl_link <- read_csv("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
+# # <<<<<<<< TESTING >>>>>>>>>>>>>>
+coral <- read_csv("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- read_csv("Data_LOCAL_ONLY/demo_CoralDat.csv")
+out_prefix="test"
+run_parallel=TRUE
+set_cores=11
+tbl_link <- read_csv("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
 
 coral$Date <- mdy(coral$Date)
 coral %<>%
@@ -248,14 +245,16 @@ Warn_list$UNKCount <- Err_counts %>%
   rename("Park_Site_Transect_Trip_Purpose" = "EventID", "% Unknown" = PercUNK)
 
 # Format data for analyses ----
+
+# Account for different classification of bleaching prior to 10/1/05
 coral$BleachingCode[is.na(coral$BleachingCode) & coral$Category =="CORAL" & coral$SurvDate < "2005-10-01"] <- "NoData"
 coral$BleachingCode[is.na(coral$BleachingCode) & coral$Category =="CORAL" & coral$SurvDate >= "2005-10-01"] <- "UNBL"
 coral$BleachingCode[coral$BleachingCode == "BL" & coral$Category =="CORAL"] <- "BL1"
 coral$BleachingCode[coral$Category != "CORAL"] <- NA
 
 coral.sub <- coral %>%
-  filter(!Category %in% c("EQUIP", "SHADOW")) %>%  # remove EQUIP & SHADOW data
-  filter(Purpose %in% c("Annual", "Episodic")) %>%
+  filter(!Category %in% c("EQUIP", "SHADOW")) %>%  # remove EQUIP & SHADOW data, to calculate the adjusted points
+  filter(Purpose %in% c("Annual", "Episodic")) %>% # only include annual and episodic data
   arrange(Site, SurvDate, Transect)
 
 # If the file doesn't already have a Reporting Site column, get the information from the link table
@@ -269,27 +268,27 @@ if(!"IsActive" %in% colnames(coral.sub) & exists("tbl_link")) {
 }
 
 coral.sub %<>%
-  mutate(RepSiteSurvID = paste0(ParkCode, "_", ReportingSite, "_", TripName)) %>%
+  mutate(RepSiteSurvID = paste0(ParkCode, "_", ReportingSite, "_", TripName)) %>% # create a unique ID for each reporting site-survey event
   dplyr::select(Year, SurvDate, ParkCode, Site, Transect, Latitude, Longitude, Taxon, BleachingCode, Category, Subcategory, FunctionalGroup, CountOfTaxon, EventID, RepSiteSurvID, SiteSurvID, TripName, Purpose, ReportingSite, ReportingSiteName, IsActive) 
 # %>%  mutate_if(is.character, as.factor)
 
 # STOP-Error check--make sure all records have associated Reporting Site and Activity Status
 missing_RS <- coral.sub[is.na(coral.sub$ReportingSite), ] %>%
   distinct()
-if(nrow(missing_RS) > 0) stop("These data records do not have reporting site information:\n", paste(capture.output(print(missing_RS)), collapse = "\n"))
+if(nrow(missing_RS) > 0) stop("These data records do not have reporting site information:\n", paste(capture.output(print(missing_RS)), collapse = "\n")) else cat("OK >>> All records have reporting site info")
 missing_IsActive <- coral.sub[is.na(coral.sub$IsActive), ] %>%
   distinct()
-if(nrow(missing_IsActive) > 0) stop("These data records do not have activity status information:\n", paste(capture.output(print(missing_IsActive)), collapse = "\n"))
+if(nrow(missing_IsActive) > 0) stop("These data records do not have activity status information:\n", paste(capture.output(print(missing_IsActive)), collapse = "\n")) else cat("OK >>> All records have activity status info")
 
-CalcRepSites <- !identical(coral.sub$Site, coral.sub$ReportingSite) # if TRUE, need to separately summarize by ReportingSite
+CalcRepSites <- !identical(coral.sub$Site, coral.sub$ReportingSite) # if TRUE it means there are reporting sites that are different from sites, so need to separately summarize by ReportingSite (for those that are different)
 
 # Uncomment (i.e., remove the '#') the line below to output a CSV of the cleaned data
 # write.csv(coral.sub, paste0(out_prefix, "_cleandat.csv"), row.names = FALSE) 
 
 mapdat <- coral.sub %>%
-  dplyr::select(ReportingSiteName, ReportingSite, Site, Latitude, Longitude, Year, IsActive) %>%
+  dplyr::select(ReportingSiteName, ReportingSite, Site, Latitude, Longitude, Year, IsActive) %>% # pull only the data relevant for mapping by Site
   group_by(Site) %>%
-  summarize(
+  summarize( # site-level summary stats for mapping
     ReportingSiteName = unique(ReportingSiteName),
     ReportingSite = unique(ReportingSite),
     IsActive = unique(IsActive),
@@ -308,13 +307,14 @@ RS_startyr <- mapdat %>%
   summarize(startyr = max(minyr))
 
 # Calculate adjusted total number of points and number of coral points per survey-transect ----
+# >>>>>>>>>>>>>> PICK UP FROM HERE--ADD THE ALGAL FUNCTIONAL GROUPS FROM SOP 21
 N.event <- coral.sub %>%
   group_by(EventID) %>%
-  summarize(AdjPoints = sum(CountOfTaxon, na.rm=TRUE))  # use for denominator. This is the number of hits of "something"
+  summarize(AdjPoints = sum(CountOfTaxon, na.rm=TRUE))  # use for denominator. This is the number of hits of "something" for that particular transect survey
 N.coral <- coral.sub %>%
   filter(Category == "CORAL") %>%
   group_by(EventID) %>%
-  summarize(CoralPoints = sum(CountOfTaxon, na.rm=TRUE))   # use for denominator of relative percent cover. This is the number of hits of "something coral"
+  summarize(CoralPoints = sum(CountOfTaxon, na.rm=TRUE))   # use for denominator of relative percent cover for CORAL category. This is the number of hits of "something coral" in that particular transect survey
 N.event %<>% left_join(N.coral, by = "EventID")
 N.event$CoralPoints[is.na(N.event$CoralPoints)] <- 0 # if no coral hits for an event, replace the NA with zero
 
@@ -528,7 +528,8 @@ out.list <- list(CalcRepSites = CalcRepSites,
                  SS_PercCov = SS_PercCov,
                  RC_Site = RC_Site,
                  Bleach = Bleach,
-                 mapdat = mapdat2)
+                 mapdat = mapdat2,
+                 coraldat = coral.sub)
 saveRDS(out.list, paste0(out_prefix, "_coralsummary.RDS"))
 }
 

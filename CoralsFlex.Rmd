@@ -23,7 +23,7 @@ lapply(pkgList, library, character.only = TRUE)
 options(shiny.maxRequestSize = 20*1024^2) # allows data files up to 20 MB to be imported
 source("Corals.R")
 
-rv <- reactiveValues(CalcRepSites = NULL, Warn_list = NULL, PC_options = NULL, PC_Site = NULL, SS_PointCount = NULL, SS_PercCov = NULL, RC_Site = NULL, Bleach = NULL, mapdat = NULL)
+rv <- reactiveValues(CalcRepSites = NULL, Warn_list = NULL, PC_options = NULL, PC_Site = NULL, SS_PointCount = NULL, SS_PercCov = NULL, RC_Site = NULL, Bleach = NULL, mapdat = NULL, coraldat = NULL)
 
 rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL)
 ```
@@ -54,15 +54,19 @@ observeEvent(eventExpr = input$button_import, {
 ```{r action_load_RDS}
 observeEvent(eventExpr = input$summaryfile, {
   out <- readRDS(input$summaryfile$datapath)
-  rv$CalcRepSites <- out$CalcRepSites
-  rv$Warn_list <- out$Warn_list
-  rv$PC_options <- out$PC_options
-  rv$PC_Site <- out$PC_Site
-  rv$SS_PointCount <- out$SS_PointCount
-  rv$SS_PercCov <- out$SS_PercCov
-  rv$RC_Site <- out$RC_Site
-  rv$Bleach <- out$Bleach
-  rv$mapdat <- out$mapdat
+  shiny::validate(need(names(out) == names(rv), message = paste0("DATA PROCESSING ERROR: The loaded file needs to have these and only these list elements: ", paste(names(rv), collapse = ", "), ". Please try with another file.")))
+ 
+  rv <- sapply(names(out), FUN = function(i) {rv[[i]] <- out[[i]]}, simplify = FALSE)
+  # rv$CalcRepSites <- out$CalcRepSites
+  # rv$Warn_list <- out$Warn_list
+  # rv$PC_options <- out$PC_options
+  # rv$PC_Site <- out$PC_Site
+  # rv$SS_PointCount <- out$SS_PointCount
+  # rv$SS_PercCov <- out$SS_PercCov
+  # rv$RC_Site <- out$RC_Site
+  # rv$Bleach <- out$Bleach
+  # rv$mapdat <- out$mapdat
+  # rv$coraldat <- out$coraldat
   
   rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL)
   
@@ -120,27 +124,16 @@ observeEvent(eventExpr = input$button_export_PC, {
 # Action to update cover summaries with current user inputs----
 observeEvent(eventExpr = input$button_update_cover, {
   
-  shiny::req(!is.null(rv$PC_Site), !is.null(input$sel_lev), !is.null(input$sel_geogscale), !is.null(input$sel_sublev), !is.null(input$sel_showRSS), !is.null(input$sel_episodic), !is.null(input$sel_error), !is.null(input$sel_splitplot))
+  shiny::req(!is.null(rv$PC_Site), !is.null(input$sel_lev), !is.null(input$sel_summaryscale), !is.null(input$sel_sublev), !is.null(input$sel_showRSS), !is.null(input$sel_episodic), !is.null(input$sel_error), !is.null(input$sel_splitplot))
  
-  dat_PC <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_geogscale & Sublevel %in% input$sel_sublev & RSS %in% input$sel_showRSS)
+  dat_PC <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_summaryscale & Sublevel %in% input$sel_sublev & RSS %in% input$sel_showRSS)
  
   if(input$sel_episodic == FALSE) # remove episodic data
     dat_PC %<>% filter(Purpose == "Annual")
   
-  if(input$sel_metric == "Median" & input$sel_error == "95%CI")  # not the most efficient way, but it's fail-safe
-    dat_PC2 <- dat_PC %>%
-    select(RSS, Sublevel, Year, SurvDate, NumTransect, y_val = median, y_low = med_low95, y_high = med_high95)
-  
   if(input$sel_metric == "Mean" & input$sel_error == "95%CI")
     dat_PC2 <- dat_PC %>%
     select(RSS, Sublevel, Year, SurvDate, NumTransect, y_val = mean, y_low = mean_low95, y_high = mean_high95)
-  
-  if(input$sel_metric == "Median" & input$sel_error == "SE")
-    dat_PC2 <- dat_PC %>%
-    mutate(
-      y_low = median - med_SE, 
-      y_high = median + med_SE) %>%
-    select(RSS, Sublevel, Year, SurvDate, NumTransect, y_val = median, y_low, y_high)
   
   if(input$sel_metric == "Mean" & input$sel_error == "SE")
     dat_PC2 <- dat_PC %>%
@@ -150,6 +143,8 @@ observeEvent(eventExpr = input$button_update_cover, {
     select(RSS, Sublevel, Year, SurvDate, NumTransect, y_val = mean, y_low, y_high)
   
   rv_param_temp$dat_PC <- dat_PC2 %>% arrange(RSS, Sublevel, Year, SurvDate)
+  
+  shinyjs::hideElement("wp_cover_criteria")
 })
 ```
 
@@ -228,7 +223,7 @@ actionButton("button_import", "IMPORT AND PROCESS NEW DATA", width = "100%")
 ```{r select_files}
 fileInput("summaryfile", label = "Select a summary RDS file", accept = c('.RDS'), width = "100%")
   
-checkboxInput("plotwarn_on", label = "Show plot warnings", value = TRUE)
+# checkboxInput("plotwarn_on", label = "Show plot warnings", value = TRUE)
 ```
 
 Data Warnings
@@ -334,29 +329,29 @@ br()
 Inputs {.sidebar data-width=275}
 -------------------------------------
 ```{r input_cover1}
+actionButton("button_update_cover", "Update Cover Summaries", style="background-color:#66CD00; color:black", width = "95%")
+  
+br()
+  
+br()
+  
+actionButton("button_export_PC", "Click to Export Plot Data", width = "95%")
+  
+br()
+
 # shinyjs::hidden( # initially hide this well panel
-  wellPanel(
-    id = "wp_filter_sublev",
-    
-saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS")),
-saveRDS(isolate(reactiveValuesToList(rv)), paste0("temp_rv.RDS")),
-saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS"),
-    
-    br(),
-    
-    actionButton("button_update_cover", "Update Cover Summaries", style="background-color:#66CD00; color:black", width = "95%"),
-    
-    br(),
-    
-    actionButton("button_export_PC", "Click to Export Plot Data", width = "95%"),
-    
-    radioButtons("sel_metric",
-            label = "Metric to plot",
-            choices = list("Median", "Mean"),
-            selected = "Median",
-            inline = TRUE),
-    
-    radioButtons("sel_error",
+wellPanel(
+  id = "wp_cover_criteria",
+  
+  p(strong("Select summary criteria, then press 'Update Cover Summaries'")),
+  
+  radioButtons("sel_metric",
+               label = "Metric to plot",
+               choices = list("Median", "Mean"),
+               selected = "Median",
+               inline = TRUE),
+  
+  radioButtons("sel_error",
              label = "Bootstrapped error bars to plot",
              choiceNames = list("95%CI", "SE*"),
              choiceValues = list("95%CI", "SE"),
@@ -365,7 +360,6 @@ saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS"),
     
     tags$div(renderText({ 
       shiny::req(!is.null(input$sel_error))
-      
       if(input$sel_error == "SE") {
         paste0("WARNING!! SE is valid for % cover only if individual transect data are approximately normally distributed. SE error bars that extend below zero are one indication that SE calculations are not appropriate for your data.")  # Post a warning about using SE
         }
@@ -376,32 +370,31 @@ saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS"),
     checkboxInput("sel_episodic", label = "Include episodic survey data", value = TRUE),
     
     # Select summary level
-    radioButtons("sel_geogscale", 
-             label = "Geographic scale to summarize", 
+    radioButtons("sel_summaryscale", 
+             label = "Summarize data at this level:", 
              choiceNames = list("Reporting Site", "Site"),
              choiceValues = list("RepSiteSurvID", "SiteSurvID"),
              selected = "SiteSurvID",
              inline = TRUE),
 
     tags$div(renderText({ 
-      shiny::req(!is.null(input$sel_geogscale))
-      
-      if(input$sel_geogscale == "RepSiteSurvID") {
+      shiny::req(!is.null(input$sel_summaryscale))
+      if(input$sel_summaryscale == "RepSiteSurvID") {
         paste0("NOTE: Summaries by Reporting Site are limited to active sites and begin on the first year for which data are available for all active sites")  # Explain how reporting sites are summarized
         }
       }), style = "font-size:14px; color:red; font-weight:bold;"),
 
     renderUI({
-      shiny::req(!is.null(rv$mapdat), !is.null(input$sel_geogscale), !is.null(input$PCactive))
+      shiny::req(!is.null(rv$mapdat), !is.null(input$sel_summaryscale), !is.null(input$PCactive))
       
       RSS_choices <- rv$mapdat %>%
         dplyr::filter(if(input$PCactive == TRUE) IsActive == 1 else TRUE) %>%
-        {if(input$sel_geogscale == "SiteSurvID") dplyr::select(., Site) else dplyr::select(., ReportingSite)} %>%
+        {if(input$sel_summaryscale == "SiteSurvID") dplyr::select(., Site) else dplyr::select(., ReportingSite)} %>%
         dplyr::distinct() %>%
         pull() %>%
         as.character()
 
-      checkboxGroupInput("sel_showRSS", label = paste0("Show results for these ", ifelse(input$sel_geogscale == "RepSiteSurvID", "reporting sites", "sites")), choices = RSS_choices, selected = if(!is.null(input$sel_showRSS) & all(input$sel_showRSS %in% RSS_choices)) {input$sel_showRSS} else {RSS_choices}, inline = FALSE) # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
+      checkboxGroupInput("sel_showRSS", label = paste0("Show results for these ", ifelse(input$sel_summaryscale == "RepSiteSurvID", "reporting sites", "sites")), choices = RSS_choices, selected = if(!is.null(input$sel_showRSS) & all(input$sel_showRSS %in% RSS_choices)) {input$sel_showRSS} else {RSS_choices}, inline = FALSE) # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
       }),
     
     # Select grouping level
@@ -412,24 +405,10 @@ saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS"),
                   choices = levels(rv$PC_options$Level), 
                   selected = switch(is.null(input$sel_lev)+1, input$sel_lev, levels(rv$PC_options$Level)[1]))
       }),
-    
-    br(),
-    
-    # Select sublevels
-    # avail_sublevs <- reactive({
-    #   if(!is.null(rv$PC_Site) & !is.null(input$sel_lev) & !is.null(input$sel_geogscale) & !is.null(input$sel_showRSS) & !is.null(input$sel_episodic)) {
-    # 
-    #   avail_temp <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_geogscale & RSS %in% input$sel_showRSS) %>%
-    #     dplyr::filter(if(input$sel_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
-    #     pull(Sublevel) %>%
-    #     as.character() %>%
-    #     unique()
-    #   }
-    #   }),
 
     renderUI({
-  shiny::req(!is.null(rv$PC_Site), !is.null(input$sel_lev), !is.null(input$sel_geogscale), !is.null(input$sel_showRSS), !is.null(input$sel_episodic))
-      rv_param_temp$PC_avail_sublevs <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_geogscale & RSS %in% input$sel_showRSS) %>%
+  shiny::req(!is.null(rv$PC_Site), !is.null(input$sel_lev), !is.null(input$sel_summaryscale), !is.null(input$sel_showRSS), !is.null(input$sel_episodic))
+      rv_param_temp$PC_avail_sublevs <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_summaryscale & RSS %in% input$sel_showRSS) %>%
         dplyr::filter(if(input$sel_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
         pull(Sublevel) %>%
         as.character() %>%
@@ -448,7 +427,7 @@ conditionalPanel(
   condition = "input.sel_lev == 'Taxon'",
   actionButton("sublev_esa_button", "Select ESA", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px")
 )
-) # end of 'wp_filter_sublev'
+) # end of 'wp_cover_criteria'
 ```
  
 *\*Relative cover for functional groups may not sum to 100% because some coral species could not be assigned to a functional group.*
@@ -458,7 +437,7 @@ conditionalPanel(
 renderUI({
   shiny::req(!is.null(input$sel_showRSS), !is.null(input$sel_sublev))
 
-  selectInput("sel_splitplot", label = "In a single plot, show: ", choices = c("One location, one sublevel" = "one_loc_one_sub", "One sublevel, many locations" = "one_sub_many_loc", "One location, many sublevels" = "one_loc_many_sub"), selected = switch(is.null(input$sel_splitplot)+1, input$sel_splitplot, "one_loc_one_sub"), width = "95%")
+  selectInput("sel_splitplot", label = "In a single plot, show: ", choices = c("One sublevel, many locations" = "one_sub_many_loc", "One location, many sublevels" = "one_loc_many_sub", "One location, one sublevel" = "one_loc_one_sub"), selected = switch(is.null(input$sel_splitplot)+1, input$sel_splitplot, "one_sub_many_loc"), width = "95%")
 })
 
 numericInput("sel_ncols",
@@ -596,6 +575,7 @@ output$table_perc_cover <- renderReactable({
     tab_perc_cov,
     columns = list(
       RSS = colDef(width = 100),
+      Sublevel = colDef(width = 130),
       Year = colDef(name = "Survey Year", width = 100, align = "center"),
       SurvDate = colDef(name = "Survey Date", width = 100, align = "center"),
       NumTransect = colDef(name = "# of Transects", width = 100, align = "center"),
