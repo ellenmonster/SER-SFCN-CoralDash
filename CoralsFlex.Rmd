@@ -21,11 +21,11 @@ if (length(pkgList[!inst]) > 0) install.packages(pkgList[!inst],dep=TRUE)
 lapply(pkgList, library, character.only = TRUE)
 
 options(shiny.maxRequestSize = 20*1024^2) # allows data files up to 20 MB to be imported
-source("Corals.R")
+# source("Corals.R")
 
 rv <- reactiveValues(CalcRepSites = NULL, Warn_list = NULL, PC_options = NULL, PC_Site = NULL, SS_PointCount = NULL, SS_PercCov = NULL, RC_Site = NULL, Bleach = NULL, mapdat = NULL, coraldat = NULL)
 
-rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL)
+rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL, sel_showRSS = NULL, sel_sublev = NULL)
 ```
 
 ```{r action_button_import_new_data}
@@ -41,7 +41,7 @@ observeEvent(eventExpr = input$button_import, {
   withProgress(message = "Please be patient. Calculating something wonderful...", value = 0, {
     FuncCorals(filenam = input$filenam$datapath, sitesfilenam = input$sitesfilenam$datapath, out_prefix = input$out_prefix, run_parallel = input$use_parallel, set_cores = input$num_cores)
     
-    rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL)
+    rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL, sel_showRSS = NULL, sel_sublev = NULL)
     
      showModal(modalDialog(
         title = "Done",
@@ -68,7 +68,7 @@ observeEvent(eventExpr = input$summaryfile, {
   # rv$mapdat <- out$mapdat
   # rv$coraldat <- out$coraldat
   
-  rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL)
+  rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL, sel_showRSS = NULL, sel_sublev = NULL)
   
   Sys.sleep(0.25)
   
@@ -105,16 +105,16 @@ observeEvent(eventExpr = input$sublev_esa_button, {
 
 ```{r action_button_export_PC}
 observeEvent(eventExpr = input$button_export_PC, {
-  shiny::req(!is.null(rv_param_temp$dat_PC), !is.null(input$sel_metric), !is.null(input$sel_error), !is.null(input$sel_lev), !is.null(input$sel_sublev))
+  shiny::req(!is.null(rv_param_temp$dat_PC))
     dat_export <- rv_param_temp$dat_PC 
-    colnames(dat_export)[colnames(dat_export)=="y_val"] <- input$sel_metric
+    colnames(dat_export)[colnames(dat_export)=="y_val"] <- "Mean"
     colnames(dat_export)[colnames(dat_export)=="y_low"] <- paste0(input$sel_error, "_low")
     colnames(dat_export)[colnames(dat_export)=="y_high"] <- paste0(input$sel_error, "_high")
   
-    write.csv(dat_export, paste0(input$sel_lev, "_", input$sel_sublev, "_perccov.csv"), row.names = FALSE)
+    write.csv(dat_export, "corals_perccov.csv", row.names = FALSE)
     showModal(modalDialog(
     title = "Done",
-    paste0("The data have been saved as ", input$sel_lev, "_", input$sel_sublev, "_perccov.csv in the current working directory, ", getwd())
+    paste0("The data have been saved as corals_perccov.csv in the current working directory, ", getwd())
     )
     )
 })
@@ -123,19 +123,19 @@ observeEvent(eventExpr = input$button_export_PC, {
 ```{r action_button_update_cover}
 # Action to update cover summaries with current user inputs----
 observeEvent(eventExpr = input$button_update_cover, {
-  
-  shiny::req(!is.null(rv$PC_Site), !is.null(input$sel_lev), !is.null(input$sel_summaryscale), !is.null(input$sel_sublev), !is.null(input$sel_showRSS), !is.null(input$sel_episodic), !is.null(input$sel_error), !is.null(input$sel_splitplot))
+
+  shiny::req(!is.null(rv$PC_Site), !is.null(input$sel_lev), !is.null(input$sel_spatialscale), !is.null(input$sel_sublev), !is.null(input$sel_showRSS), !is.null(input$sel_episodic), !is.null(input$sel_error), !is.null(input$sel_splitplot))
  
-  dat_PC <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_summaryscale & Sublevel %in% input$sel_sublev & RSS %in% input$sel_showRSS)
+  dat_PC <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_spatialscale & Sublevel %in% input$sel_sublev & RSS %in% input$sel_showRSS)
  
   if(input$sel_episodic == FALSE) # remove episodic data
     dat_PC %<>% filter(Purpose == "Annual")
   
-  if(input$sel_metric == "Mean" & input$sel_error == "95%CI")
+  if(input$sel_error == "95%CI")
     dat_PC2 <- dat_PC %>%
     select(RSS, Sublevel, Year, SurvDate, NumTransect, y_val = mean, y_low = mean_low95, y_high = mean_high95)
   
-  if(input$sel_metric == "Mean" & input$sel_error == "SE")
+  if(input$sel_error == "SE")
     dat_PC2 <- dat_PC %>%
     mutate(
       y_low = mean - mean_SE, 
@@ -143,7 +143,12 @@ observeEvent(eventExpr = input$button_update_cover, {
     select(RSS, Sublevel, Year, SurvDate, NumTransect, y_val = mean, y_low, y_high)
   
   rv_param_temp$dat_PC <- dat_PC2 %>% arrange(RSS, Sublevel, Year, SurvDate)
+  rv_param_temp$sel_showRSS <- input$sel_showRSS # make sure user selection doesn't automatically update plot page height
+  rv_param_temp$sel_sublev <- input$sel_sublev
   
+  saveRDS(isolate(reactiveValuesToList(input)), "temp_input.RDS")
+saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS")
+
   shinyjs::hideElement("wp_cover_criteria")
 })
 ```
@@ -329,27 +334,24 @@ br()
 Inputs {.sidebar data-width=275}
 -------------------------------------
 ```{r input_cover1}
-actionButton("button_update_cover", "Update Cover Summaries", style="background-color:#66CD00; color:black", width = "95%")
-  
-br()
-  
-br()
-  
-actionButton("button_export_PC", "Click to Export Plot Data", width = "95%")
-  
-br()
 
 # shinyjs::hidden( # initially hide this well panel
 wellPanel(
   id = "wp_cover_criteria",
   
-  p(strong("Select summary criteria, then press 'Update Cover Summaries'")),
+  p(strong("Select summary criteria, then press 'UPDATE COVER SUMMARIES'")),
   
-  radioButtons("sel_metric",
-               label = "Metric to plot",
-               choices = list("Median", "Mean"),
-               selected = "Median",
-               inline = TRUE),
+  br(),
+
+actionButton("button_update_cover", "Update Cover Summaries", style="background-color:#66CD00; color:black", width = "95%"),
+  
+br(),
+  
+br(),
+  
+actionButton("button_export_PC", "Click to Export Plot Data", width = "95%"),
+  
+br(),
   
   radioButtons("sel_error",
              label = "Bootstrapped error bars to plot",
@@ -369,35 +371,35 @@ wellPanel(
     checkboxInput("PCactive", label = "Only use active sites", value = FALSE),
     checkboxInput("sel_episodic", label = "Include episodic survey data", value = TRUE),
     
-    # Select summary level
-    radioButtons("sel_summaryscale", 
-             label = "Summarize data at this level:", 
+    # Select spatial scale
+    radioButtons("sel_spatialscale", 
+             label = "Summarize data at this spatial scale:", 
              choiceNames = list("Reporting Site", "Site"),
              choiceValues = list("RepSiteSurvID", "SiteSurvID"),
              selected = "SiteSurvID",
              inline = TRUE),
 
     tags$div(renderText({ 
-      shiny::req(!is.null(input$sel_summaryscale))
-      if(input$sel_summaryscale == "RepSiteSurvID") {
+      shiny::req(!is.null(input$sel_spatialscale))
+      if(input$sel_spatialscale == "RepSiteSurvID") {
         paste0("NOTE: Summaries by Reporting Site are limited to active sites and begin on the first year for which data are available for all active sites")  # Explain how reporting sites are summarized
         }
       }), style = "font-size:14px; color:red; font-weight:bold;"),
 
     renderUI({
-      shiny::req(!is.null(rv$mapdat), !is.null(input$sel_summaryscale), !is.null(input$PCactive))
+      shiny::req(!is.null(rv$mapdat), !is.null(input$sel_spatialscale), !is.null(input$PCactive))
       
       RSS_choices <- rv$mapdat %>%
         dplyr::filter(if(input$PCactive == TRUE) IsActive == 1 else TRUE) %>%
-        {if(input$sel_summaryscale == "SiteSurvID") dplyr::select(., Site) else dplyr::select(., ReportingSite)} %>%
+        {if(input$sel_spatialscale == "SiteSurvID") dplyr::select(., Site) else dplyr::select(., ReportingSite)} %>%
         dplyr::distinct() %>%
         pull() %>%
         as.character()
 
-      checkboxGroupInput("sel_showRSS", label = paste0("Show results for these ", ifelse(input$sel_summaryscale == "RepSiteSurvID", "reporting sites", "sites")), choices = RSS_choices, selected = if(!is.null(input$sel_showRSS) & all(input$sel_showRSS %in% RSS_choices)) {input$sel_showRSS} else {RSS_choices}, inline = FALSE) # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
+      checkboxGroupInput("sel_showRSS", label = paste0("Show results for these ", ifelse(input$sel_spatialscale == "RepSiteSurvID", "reporting sites", "sites")), choices = RSS_choices, selected = if(!is.null(input$sel_showRSS) & all(input$sel_showRSS %in% RSS_choices)) {input$sel_showRSS} else {RSS_choices}, inline = FALSE) # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
       }),
     
-    # Select grouping level
+    # Select grouping scale
     renderUI({
       shiny::req(!is.null(rv$PC_options$Level))
       
@@ -406,9 +408,23 @@ wellPanel(
                   selected = switch(is.null(input$sel_lev)+1, input$sel_lev, levels(rv$PC_options$Level)[1]))
       }),
 
+# If grouping option is finer than Category, then user must select a category to see the selection options for the finer grouping level
+
+renderUI({
+  shiny::req(!is.null(rv$PC_Site), !is.null(input$sel_lev))
+  if(input$sel_lev != "Category") {
+    selectInput("sel_categ", 
+                label = paste0("Show ", input$sel_lev, "for this category:"),
+                choices = sort(unique(rv$PC_Site$Category)),
+                selected = switch(is.null(input$sel_categ)+1, input$sel_categ, "CORAL")
+    )
+  } # <<<<<<<<<<<<<<<<<<< PICK UP FROM HERE--FOR ANY LEVEL BELOW CATEGORY, USER MUST SELECT A SINGLE CATEGORY TO SHOW SUBLEVEL OPTIONS FOR
+})
+  
     renderUI({
-  shiny::req(!is.null(rv$PC_Site), !is.null(input$sel_lev), !is.null(input$sel_summaryscale), !is.null(input$sel_showRSS), !is.null(input$sel_episodic))
-      rv_param_temp$PC_avail_sublevs <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_summaryscale & RSS %in% input$sel_showRSS) %>%
+  shiny::req(!is.null(rv$PC_Site), !is.null(input$sel_lev), !is.null(input$sel_spatialscale), !is.null(input$sel_showRSS), !is.null(input$sel_episodic))
+      rv_param_temp$PC_avail_sublevs <- subset(rv$PC_Site[[input$sel_lev]], SiteLev == input$sel_spatialscale & RSS %in% input$sel_showRSS) %>%
+        dplyr::filter(if(input$sel_lev != "Category"))
         dplyr::filter(if(input$sel_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
         pull(Sublevel) %>%
         as.character() %>%
@@ -430,7 +446,6 @@ conditionalPanel(
 ) # end of 'wp_cover_criteria'
 ```
  
-*\*Relative cover for functional groups may not sum to 100% because some coral species could not be assigned to a functional group.*
 ```{r input_cover2}
 ####### PICK UP FROM HERE--I'M COMBINING %COV AND %REL COV AND ALLOWING MULTIPLE SUBLEVELS AND/OR MULTIPLE SITES
 
@@ -468,15 +483,23 @@ Trends in Cover
 
 ```{r plot_PC}
 output$out_cover_plot <- plotly::renderPlotly({
-  shiny::req(!is.null(rv_param_temp$dat_PC), !is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_metric), !is.null(input$sel_error), !is.null(input$sel_sublev), !is.null(input$sel_ncols))
+  shiny::req(!is.null(rv_param_temp$dat_PC), !is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev), !is.null(input$sel_ncols))
+  shiny::validate(need(!is.null(rv_param_temp$dat_PC), message = "Select summary criteria from the gray box to the left, then press the green 'UPDATE COVER SUMMARIES' button"))
   
   cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
   
-if(input$sel_splitplot == "one_loc_one_sub") {
+if(input$sel_splitplot == "one_loc_one_sub") { # one plot per loc-sub
   plotly_PC <- 
     ggplot(data = rv_param_temp$dat_PC, aes(x = SurvDate, y = y_val, NumTransect = NumTransect, y_low = y_low, y_high = y_high), colour = "black") +
     geom_point()
-  } else {
+  } else { # multiple colors in one plot
+    
+    # assign colors
+    color_levels <- switch((input$sel_splitplot == "one_loc_many_sub")+1,  sort(unique(rv_param_temp$dat_PC$RSS)), sort(unique(rv_param_temp$dat_PC$Sublevel))) # levels to be assigned colors
+    cbp1_assigned <- switch((length(color_levels) <= length(cbp1)) + 1,  colorRampPalette(cbp1)(length(color_levels)), cbp1[1:length(color_levels)])
+  
+  # pal <- colorFactor(palette = cbp1_assigned, domain = color_levels, levels = color_levels)
+  
     plotly_PC <- 
       ggplot(data = rv_param_temp$dat_PC, aes_string(x = "SurvDate", y = "y_val", colour = ifelse(input$sel_splitplot == "one_loc_many_sub", "Sublevel", "RSS"), NumTransect = "NumTransect", y_low = "y_low", y_high = "y_high")) +
     geom_point()
@@ -485,7 +508,8 @@ if(input$sel_splitplot == "one_loc_one_sub") {
     plotly_PC <- plotly_PC + scale_colour_grey()
   } else {
     plotly_PC <- plotly_PC +
-      discrete_scale("fill", "manual", colorRampPalette(cbp1))
+      scale_color_manual(values = cbp1_assigned)
+      # discrete_scale("color", "manual", colorRampPalette(cbp1))
   }
 }
 
@@ -505,56 +529,56 @@ facet_vars <- switch(input$sel_splitplot,
                      "one_loc_many_sub" = "~ RSS",
                      "one_sub_many_loc" = "~ Sublevel")
 
-default_title <- paste0(input$sel_metric,  "% Cover (", input$sel_error, ")")
+default_title <- paste0("Mean % Cover (", input$sel_error, ")")
   plotly_PC2 <- plotly_PC +
     expand_limits(y = switch(is.null(input$PCy_max)+1, c(0, input$PCy_max, 0), 0)) +
+    labs(x = "Year", y = paste0("Mean % Cover (", input$sel_error, ")")) +
     scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
-    labs(title = switch((nchar(input$PCplot_title)==0)+1, input$PCplot_title, default_title), x = "Year", y = paste0(input$sel_metric, " % Cover (", input$sel_error, ")")) +
     facet_wrap(as.formula(facet_vars), scales = "free_y", ncol = input$sel_ncols) +
     theme_bw(base_size = 12) +
-    theme(legend.title = element_blank(),
-          panel.spacing = unit(2, "lines"))
+    theme(legend.title = element_blank())
+#,panel.spacing = unit(2, "lines"))
   
   facet_ht <- 260
-  add_on_ht <- 120
+  add_on_ht <- 180 # this is for title and subtitle
   page_ht <- switch(input$sel_splitplot,
-                     "one_loc_one_sub" = ceiling(length(input$sel_sublev) * length(input$sel_showRSS)/input$sel_ncols) * facet_ht + add_on_ht,
-                     "one_loc_many_sub" = ceiling(length(input$sel_showRSS)/input$sel_ncols) * facet_ht + add_on_ht,
-                     "one_sub_many_loc" = ceiling(length(input$sel_sublev)/input$sel_ncols) * facet_ht + add_on_ht
+                     "one_loc_one_sub" = ceiling(length(rv_param_temp$sel_sublev) * length(rv_param_temp$sel_showRSS)/input$sel_ncols) * facet_ht + add_on_ht,
+                     "one_loc_many_sub" = ceiling(length(rv_param_temp$sel_showRSS)/input$sel_ncols) * facet_ht + add_on_ht,
+                     "one_sub_many_loc" = ceiling(length(rv_param_temp$sel_sublev)/input$sel_ncols) * facet_ht + add_on_ht
   )
 
-  if(input$plotwarn_on) {
-    gp <- ggplotly(plotly_PC2 +
-                     labs(subtitle = "(NOTES: X-axis tick marks Jan. 1 of each year. If fewer than 8 transects, lines are dotted)"),
+  gp <- ggplotly(plotly_PC2,
                    height = page_ht,
                    tooltip = c("RSS", "SurvDate", "NumTransect", "y_val", "y_low", "y_high")) # specify the total plot height here because this layout will be applied to the entire page
-  } else {
-    gp <- ggplotly(plotly_PC2, 
-                   height = page_ht,
-                   tooltip = c("RSS", "SurvDate", "NumTransect", "y_val", "y_low", "y_high"))
-  }
   
-  # Code to fix the duplicate legend entry problem that occurs when ggplotly is used on faceted ggplot with a scale_colour... or scale_fill... argument
-  for (i in seq_along(gp$x$data)) {
-  # Is the layer the first entry of the group?
-  is_first <- grepl("^\\(.*?,1\\)", gp$x$data[[i]]$name)
-  # Extract the group identifier and assign it to the name and legendgroup arguments
-  gp$x$data[[i]]$name <- gsub("^\\((.*?),\\d+\\)", "\\1", gp$x$data[[i]]$name)
-  gp$x$data[[i]]$legendgroup <- gp$x$data[[i]]$name
-  # Show the legend only for the first layer of the group 
-  if (!is_first) gp$x$data[[i]]$showlegend <- FALSE
-}
-gp
+#   # Code to fix the duplicate legend entry problem that occurs when ggplotly is used on faceted ggplot with a scale_colour... or scale_fill... argument
+#   for (i in seq_along(gp$x$data)) {
+#   # Is the layer the first entry of the group?
+#   is_first <- grepl("^\\(.*?,1\\)", gp$x$data[[i]]$name)
+#   # Extract the group identifier and assign it to the name and legendgroup arguments
+#   gp$x$data[[i]]$name <- gsub("^\\((.*?),\\d+\\)", "\\1", gp$x$data[[i]]$name)
+#   gp$x$data[[i]]$legendgroup <- gp$x$data[[i]]$name
+#   # Show the legend only for the first layer of the group 
+#   if (!is_first) gp$x$data[[i]]$showlegend <- FALSE
+# }
   
-  gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.06 # move y-axis title more to the left
-  gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.06 # move x-axis title down more
-  gp %>% layout(
-        margin = list(
-          t=80,
-          b=90,
-          l= 70,
-          r=5))
+  gp <- gp %>% layout(
+    title = list( # axis and other plot titles from ggplot get lost in ggplotly, so specify it here
+      text = paste(switch((nchar(input$PCplot_title)==0)+1, input$PCplot_title, default_title), "<br>", "<sup>", "(X-axis tick marks Jan. 1 of each year. If fewer than 8 transects, lines are dotted)", "</sup>")),
+    # legend = list(orientation = "h",
+    #                y = 0.5, x = 0.5),
+    # xaxis = list(title = "Year", automargin=TRUE), 
+    # yaxis = list(title = paste0("Mean % Cover (", input$sel_error, ")"), automargin=TRUE),
+    margin = list(
+      t=110,
+      b=70,
+      l= 100,
+      r=5))
   
+    gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.06 # move y-axis title more to the left
+  gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.06 # move x-axis title down more. This affects the x-axis title specified in ggplot
+  
+  gp
 })
 
 tags$style("#out_cover_plot{height:100vh;overflow-x:scroll;overflow-y:scroll}")
@@ -579,12 +603,12 @@ output$table_perc_cover <- renderReactable({
       Year = colDef(name = "Survey Year", width = 100, align = "center"),
       SurvDate = colDef(name = "Survey Date", width = 100, align = "center"),
       NumTransect = colDef(name = "# of Transects", width = 100, align = "center"),
-      y_val = colDef(name = input$sel_metric, width = 100, align = "center"),
+      y_val = colDef(name = "Mean", width = 100, align = "center"),
       y_low = colDef(name = paste0(input$sel_error, "_low"), width = 100, align = "center"),
       y_high = colDef(name = paste0(input$sel_error, "_high"), width = 100, align = "center")
       ),
     columnGroups = list(
-      colGroup(name = paste0(input$sel_metric, " Summary Across Transects"), columns = c("y_val", "y_low", "y_high"))
+      colGroup(name = "Mean Across Transects", columns = c("y_val", "y_low", "y_high"))
       ),
     resizable = TRUE, 
     filterable = TRUE,
@@ -679,6 +703,17 @@ renderTable({
   validate(need(nrow(data_perccov()) > 0, message = FALSE))
   tab_perccov <- data_perccov()
   }, align = "c", include.rownames=TRUE)
+```
+
+Coral % Relative Cover
+======================================
+Inputs {.sidebar data-width=275}
+-------------------------------------
+*\*Relative cover for functional groups may not sum to 100% because some coral species could not be assigned to a functional group.*
+```{r input_relcover}
+renderUI({
+  selectInput("sel_RCgrouplev", label = "Select grouping level", choices = c("FunctionalGroup", "Taxon"), selected = "FunctionalGroup")
+})
 ```
 
 Bleaching

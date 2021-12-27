@@ -1,5 +1,5 @@
 
-# NOTE: Remember that for the following functions, need to add 'na.rm = TRUE': sum, mean, median
+# NOTE: Remember that for the following functions, need to add 'na.rm = TRUE': sum, mean
 
 # Load packages ----
 # Look for packages on local machine, install if necessary, then load all
@@ -18,45 +18,30 @@ FuncBootGroup <- function(GroupID, GroupName, CalcRC, trans.dat, coral.sub, run_
       boot_temp4 <- boot_temp3 %>% partition(clust)
       cluster_library(cluster = clust, packages = c("dplyr", "purrr", "boot"))
       
-      boot_temp4a <- boot_temp4 %>%
-        mutate(
-          simout_median = purrr::map(.x = data, ~ boot(data = .x$cov, statistic = function(d,i) median(d[i], na.rm = TRUE), R = 1000, stype = "i"))) %>%
-        collect() %>% # Special collect() function to recombine partitions
-        as_tibble()
-      
-      boot_temp4b <- boot_temp4 %>%
+      boot_temp5 <- boot_temp4 %>%
         mutate(
           simout_mean = purrr::map(.x = data, ~ boot(data = .x$cov, statistic = function(d,i) mean(d[i], na.rm = TRUE), R = 1000, stype = "i"))) %>%
         collect() %>% # Special collect() function to recombine partitions
-        as_tibble()
-      
-      boot_temp5 <- boot_temp4a %>%
-        full_join(boot_temp4b[, c("RSS_SurvID", "Sublevel", "simout_mean")], by = c("RSS_SurvID", "Sublevel")) %>%
+        as_tibble() %>%
         ungroup()
     } else { # run serially
       boot_temp5 <- boot_temp3 %>%
         mutate(
-          simout_median = purrr::map(.x = data, ~ boot(data = .x$cov, statistic = function(d,i) median(d[i], na.rm = TRUE), R = 1000, stype = "i")),
           simout_mean = purrr::map(.x = data, ~ boot(data = .x$cov, statistic = function(d,i) mean(d[i], na.rm = TRUE), R = 1000, stype = "i"))) %>%
         ungroup()
     }
     
     for(i in 1:nrow(boot_temp5)) {
-      boot_temp5[i, "med_SE"] = sd(boot_temp5[i, "simout_median"]$simout_median[[1]]$t)
       boot_temp5[i, "mean_SE"] = sd(boot_temp5[i, "simout_mean"]$simout_mean[[1]]$t)
     }
     
     boot_temp5 %<>%
       mutate(
-        boot_medianci = purrr::map(.x = simout_median, ~ tryCatch(boot.ci(.x, conf = 0.95, type = "perc"), error = function(e) NA)),
         boot_meanci = tryCatch(purrr::map(.x = simout_mean, ~ boot.ci(.x, conf = 0.95, type = "perc")), error = function(e) NA),
-        med_low95 = tryCatch(purrr::map(.x = boot_medianci, ~ .x$perc[[4]]), error = function(e) NA),
-        med_high95 = tryCatch(purrr::map(.x = boot_medianci, ~ .x$perc[[5]]), error = function(e) NA),
         mean_low95 = tryCatch(purrr::map(.x = boot_meanci, ~ .x$perc[[4]]), error = function(e) NA),
         mean_high95 = tryCatch(purrr::map(.x = boot_meanci, ~ .x$perc[[5]]), error = function(e) NA)) %>%
-      dplyr::select(-data, -simout_median, -boot_medianci, -simout_mean, -boot_meanci)
-    boot_temp5$med_low95 <- sapply(boot_temp5$med_low95, function(x) ifelse(is.null(x), NA, x))
-    boot_temp5$med_high95 <- sapply(boot_temp5$med_high95, function(x) ifelse(is.null(x), NA, x))
+      dplyr::select(-data, -simout_mean, -boot_meanci)
+
     boot_temp5$mean_low95 <- sapply(boot_temp5$mean_low95, function(x) ifelse(is.null(x), NA, x))
     boot_temp5$mean_high95 <- sapply(boot_temp5$mean_high95, function(x) ifelse(is.null(x), NA, x))
     return(boot_temp5)
@@ -66,7 +51,7 @@ FuncBootGroup <- function(GroupID, GroupName, CalcRC, trans.dat, coral.sub, run_
     boot_temp6 %<>%
       left_join(unique(coral.sub[c(GroupID, GroupName)]), by = c("RSS_SurvID" = GroupID)) %>%
       rename(RSS = GroupName) %>%
-      mutate_at(c("median", "med_low95", "med_high95", "med_SE", "mean", "mean_low95", "mean_high95", "mean_SE"), funs(round(., 2))) %>%
+      mutate_at(c("mean", "mean_low95", "mean_high95", "mean_SE"), funs(round(., 2))) %>%
       dplyr::select("SiteLev", "RSS", "RSS_SurvID", everything()) %>%
       arrange(RSS_SurvID, Sublevel)
     return(boot_temp6)
@@ -84,10 +69,8 @@ FuncBootGroup <- function(GroupID, GroupName, CalcRC, trans.dat, coral.sub, run_
     mutate(
       NumCoralTrans = sum(!is.na(RC)),
       PCtot = sum(PC, na.rm = TRUE),
-      PCmedian = quantile(PC, probs = 0.50, na.rm = TRUE),
       PCmean = PCtot/n, # mean % cover, averaged across transects
-      RCmedian = quantile(RC, probs = 0.50, na.rm = TRUE),
-      RCtot = ifelse(is.na(RCmedian), NA, sum(RC, na.rm = TRUE)), # if it's not a coral, then NA
+      RCtot = ifelse(is.na(sum(RC)), NA, sum(RC, na.rm = TRUE)), # if it's not a coral, then NA <<<<< MAKE SURE THIS IS THE WAY TO CALC
       RCmean = RCtot/NumCoralTrans) %>%
     dplyr::select(-PC, -RC) %>%
     distinct() %>%
@@ -110,9 +93,9 @@ FuncBootGroup <- function(GroupID, GroupName, CalcRC, trans.dat, coral.sub, run_
   PCboot_temp5 <- FuncCalcVar(PCboot_temp3, run_parallel, set_cores)
          
   PCboot_temp6 <- boot_temp2 %>%
-    dplyr::select(-RCtot, -RCmedian, -RCmean, -EstimRCVar) %>%
+    dplyr::select(-RCtot, -RCmean, -EstimRCVar) %>%
     full_join(PCboot_temp5, by = c("RSS_SurvID", "IsActive", "Year", "TripName", "SurvDate", "Purpose", "Sublevel")) %>%
-    rename(median = PCmedian, mean = PCmean)
+    rename(mean = PCmean)
   PCboot_temp6$SiteLev <- GroupID
 
   PCboot_temp7 <- FuncCleanup(PCboot_temp6, GroupID, GroupName, coral.sub)
@@ -130,10 +113,10 @@ FuncBootGroup <- function(GroupID, GroupName, CalcRC, trans.dat, coral.sub, run_
     
     RCboot_temp5 <- FuncCalcVar(RCboot_temp3, run_parallel, set_cores)
     RCboot_temp6 <- boot_temp2 %>%
-      dplyr::select(-PCtot, -PCmedian, -PCmean, -EstimPCVar) %>%
+      dplyr::select(-PCtot, -PCmean, -EstimPCVar) %>%
       filter(!is.na(RCtot)) %>%
       full_join(RCboot_temp5, by = c("RSS_SurvID", "IsActive", "Year", "TripName", "SurvDate", "Purpose", "Sublevel")) %>%
-      rename(median = RCmedian, mean = RCmean)
+      rename(mean = RCmean)
     RCboot_temp6$SiteLev <- GroupID
 
     RCboot_temp7 <- FuncCleanup(RCboot_temp6, GroupID, GroupName, coral.sub)
@@ -169,13 +152,14 @@ FuncCorals <- function(filenam, sitesfilenam = NULL, out_prefix, run_parallel, s
 coral <- read_csv(filenam)
 if(!is.null(sitesfilenam)) tbl_link <- read_csv(sitesfilenam)
 
-# # <<<<<<<< TESTING >>>>>>>>>>>>>>
+#  <<<<<<<< TESTING >>>>>>>>>>>>>> ----
 coral <- read_csv("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- read_csv("Data_LOCAL_ONLY/demo_CoralDat.csv")
 out_prefix="test"
 run_parallel=TRUE
 set_cores=11
 tbl_link <- read_csv("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
 
+# Format columns ----
 coral$Date <- mdy(coral$Date)
 coral %<>%
   rename(SurvDate = Date, Subcategory = SubCategory, Taxon = TaxonCode, CountOfTaxon = CountOfTaxonCode) %>%
@@ -195,19 +179,19 @@ Warn_list$AltPurp <- coral %>%
 
 Warn_list$NoTaxon <- coral %>%
   dplyr::select(EventID, Taxon) %>%
-  filter(is.na(Taxon) | Taxon == "No Taxon") %>% # <<<<<<< WHAT ABOUT UNK?
+  filter(is.na(Taxon) | Taxon == "No Taxon") %>% # 
   rename("Park_Site_Transect_Trip_Purpose" = "EventID")
 
 Warn_list$BleachCode <- coral %>%
   dplyr::select(EventID, Category, BleachingCode) %>%
   filter(Category != "CORAL" & !is.na(BleachingCode)) %>%
   rename("Park_Site_Transect_Trip_Purpose" = "EventID")
-    
+      
 Warn_list$TransCount <- coral %>%
-  dplyr::select(Site, Transect, SurvDate) %>%
+  dplyr::select(Site, Transect, SurvDate, Purpose) %>%
   distinct() %>%
-  group_by(Site, SurvDate) %>%
-  arrange(Site, SurvDate) %>%
+  group_by(Site, SurvDate, Purpose) %>%
+  arrange(Site, SurvDate, Purpose) %>%
   summarize(NumTransects = n()) %>%
   filter(Purpose %in% c("Annual", "Episodic") & !NumTransects %in% c(4, 20)) %>% # 'off' transect counts only matters for annual or episodic surveys
   dplyr::mutate(SurvDate = lubridate::ymd(SurvDate)) %>% # renderTable does not play nice with dates--need to format as character
@@ -253,7 +237,7 @@ coral$BleachingCode[coral$BleachingCode == "BL" & coral$Category =="CORAL"] <- "
 coral$BleachingCode[coral$Category != "CORAL"] <- NA
 
 coral.sub <- coral %>%
-  filter(!Category %in% c("EQUIP", "SHADOW")) %>%  # remove EQUIP & SHADOW data, to calculate the adjusted points
+  filter(!Category %in% c("EQUIP", "SHADOW")) %>%  # remove EQUIP & SHADOW data, to calculate the adjusted points. 
   filter(Purpose %in% c("Annual", "Episodic")) %>% # only include annual and episodic data
   arrange(Site, SurvDate, Transect)
 
@@ -272,7 +256,7 @@ coral.sub %<>%
   dplyr::select(Year, SurvDate, ParkCode, Site, Transect, Latitude, Longitude, Taxon, BleachingCode, Category, Subcategory, FunctionalGroup, CountOfTaxon, EventID, RepSiteSurvID, SiteSurvID, TripName, Purpose, ReportingSite, ReportingSiteName, IsActive) 
 # %>%  mutate_if(is.character, as.factor)
 
-# STOP-Error check--make sure all records have associated Reporting Site and Activity Status
+# STOP-Error check--make sure all records have associated Reporting Site and Activity Status ----
 missing_RS <- coral.sub[is.na(coral.sub$ReportingSite), ] %>%
   distinct()
 if(nrow(missing_RS) > 0) stop("These data records do not have reporting site information:\n", paste(capture.output(print(missing_RS)), collapse = "\n")) else cat("OK >>> All records have reporting site info")
@@ -285,6 +269,8 @@ CalcRepSites <- !identical(coral.sub$Site, coral.sub$ReportingSite) # if TRUE it
 # Uncomment (i.e., remove the '#') the line below to output a CSV of the cleaned data
 # write.csv(coral.sub, paste0(out_prefix, "_cleandat.csv"), row.names = FALSE) 
 
+
+# Map data ----
 mapdat <- coral.sub %>%
   dplyr::select(ReportingSiteName, ReportingSite, Site, Latitude, Longitude, Year, IsActive) %>% # pull only the data relevant for mapping by Site
   group_by(Site) %>%
@@ -299,7 +285,7 @@ mapdat <- coral.sub %>%
   mutate(
     poptext = paste0(Site, " (", minyr, " - ", maxyr, ")"))
 
-# For each reporting site, this is the year to start trend plots (because all active sites started by this year)
+# For each active reporting site, this is the year to start trend plots (because all active sites started by this year) ----
 RS_startyr <- mapdat %>%
   dplyr::select(ReportingSite, IsActive, minyr) %>%
   filter(IsActive == TRUE) %>%
@@ -310,13 +296,13 @@ RS_startyr <- mapdat %>%
 # >>>>>>>>>>>>>> PICK UP FROM HERE--ADD THE ALGAL FUNCTIONAL GROUPS FROM SOP 21
 N.event <- coral.sub %>%
   group_by(EventID) %>%
-  summarize(AdjPoints = sum(CountOfTaxon, na.rm=TRUE))  # use for denominator. This is the number of hits of "something" for that particular transect survey
-N.coral <- coral.sub %>%
-  filter(Category == "CORAL") %>%
-  group_by(EventID) %>%
-  summarize(CoralPoints = sum(CountOfTaxon, na.rm=TRUE))   # use for denominator of relative percent cover for CORAL category. This is the number of hits of "something coral" in that particular transect survey
-N.event %<>% left_join(N.coral, by = "EventID")
-N.event$CoralPoints[is.na(N.event$CoralPoints)] <- 0 # if no coral hits for an event, replace the NA with zero
+  summarize(AdjPoints = sum(CountOfTaxon, na.rm=TRUE))  # use for denominator. This AdjPoints is the number of hits of "something" for that particular transect survey
+N.event$AdjPoints[is.na(N.event$AdjPoints)] <- 0
+N.categ <- coral.sub %>% # for categories sponge, gorgo, coral, calculate number of hits to use as denominator for relative cover
+  filter(Category %in% c("CORAL", "GORGO", "SPONGE")) %>%
+  group_by(Category, EventID) %>% 
+  summarize(CategPoints = sum(CountOfTaxon, na.rm=TRUE))   # This is the number of hits of "something" in that category and particular transect survey
+N.categ$CategPoints[is.na(N.categ$CategPoints)] <- 0
 
 # Calculate percent cover and relative cover by different grouping variables ----
 group.var <- c("Taxon", "Category", "Subcategory", "FunctionalGroup", "BleachingCode")
@@ -328,7 +314,7 @@ names(RC_Site) <- c("Taxon", "FunctionalGroup")
 for(x in group.var) {
   CalcRC <- x %in% names(RC_Site) # for these groupings, also calculate relative cover
   
-  incProgress(1/(length(group.var) + 1987), detail = paste0(" Bootstrapping 95% CI for each level of ", x)) # This updates the progress bar when the Rmarkdown is executed. Comment it out if running this script alone.
+  incProgress(1/(length(group.var) + 1987), detail = paste0(" Bootstrapping 95% CI for each level of ", x)) 
   
   cov_template <- merge(unique(coral.sub[c("EventID", "Site", "ReportingSite", "Year", "TripName", "SurvDate", "Purpose", "IsActive")]), unique(coral.sub[x]))  # create template to add zeros when species are not detected in a survey-transect
   cov_template <- cov_template[complete.cases(cov_template),]
@@ -436,9 +422,9 @@ for(s in unique(SubCat$SiteSurvID)) {
     dplyr::select(-Sublevel) %>%
     data.matrix(rownames.force = TRUE)
   
-  perccov.summary <- subset(PC_Site$Subcategory, RSS_SurvID == s & SiteLev == "SiteSurvID", select = c("Sublevel", "median", "med_low95", "med_high95", "mean", "mean_low95", "mean_high95"))
+  perccov.summary <- subset(PC_Site$Subcategory, RSS_SurvID == s & SiteLev == "SiteSurvID", select = c("Sublevel", "mean", "mean_low95", "mean_high95"))
   
-  perccov.tab <- cbind(perccov.tab, perccov.summary[match(rownames(perccov.tab), perccov.summary$Sublevel), c("median", "med_low95", "med_high95", "mean", "mean_low95", "mean_high95")])
+  perccov.tab <- cbind(perccov.tab, perccov.summary[match(rownames(perccov.tab), perccov.summary$Sublevel), c("mean", "mean_low95", "mean_high95")])
   
   SS_PercCov[[s]] <- perccov.tab
 }
