@@ -23,7 +23,7 @@ lapply(pkgList, library, character.only = TRUE)
 options(shiny.maxRequestSize = 20*1024^2) # allows data files up to 20 MB to be imported
 # source("Corals.R")
 
-rv <- reactiveValues(CalcRepSites = NULL, Warn_list = NULL, PC_options = NULL, PC_Site = NULL, SS_PointCount = NULL, SS_PercCov = NULL, RC_Site = NULL, Bleach = NULL, mapdat = NULL, coraldat = NULL)
+rv <- reactiveValues(rawdat = NULL, CalcRepSites = NULL, Warn_list = NULL, PC_options = NULL, PC_Site = NULL, SS_PointCount = NULL, SS_PercCov = NULL, RC_Site = NULL, Bleach = NULL, mapdat = NULL, coraldat = NULL)
 
 rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL, sel_showRSS = NULL, sel_sublev = NULL)
 ```
@@ -254,7 +254,7 @@ br()
 ```{r}
 renderTable({
   validate(need(!is.null(rv$Warn_list), message = FALSE))
-  NoTaxon <- rv$Warn_list$NoTaxon
+  NoTaxon <- rv$Warn_list$UNKTaxon
   validate(need(nrow(NoTaxon) > 0, "No warnings to show"))
   NoTaxon
   }, align = "c", na = "--", include.rownames = FALSE)
@@ -307,11 +307,11 @@ renderTable({
 br()
 ```
 
-**TRANSECT SURVEYS WITH SHADOW HITS EXCEEDING 5% OF TOTAL TAXON COUNTS**
+**TRANSECT SURVEYS WITH EQUIPMENT OR SHADOW HITS EXCEEDING 5% OF TOTAL TAXON COUNTS**
 ```{r}
 renderTable({
   validate(need(!is.null(rv$Warn_list), message = FALSE))
-  ShadowCount <- rv$Warn_list$ShadowCount
+  EquipShadowCount <- rv$Warn_list$ShadowCount
   validate(need(nrow(ShadowCount) > 0, "No warnings to show"))
   ShadowCount
   }, align = "c", na = "--", include.rownames = FALSE)
@@ -867,14 +867,14 @@ output$coralmap = renderLeaflet({
       MapDat_df <- rv$mapdat
     }
     
-    minLong <- min(MapDat_df$medLong, na.rm = TRUE)
-    minLat <- min(MapDat_df$medLat, na.rm = TRUE)
-    maxLong <- max(MapDat_df$medLong, na.rm = TRUE)
-    maxLat <- max(MapDat_df$medLat, na.rm = TRUE)
+    minLong <- min(MapDat_df$MedLong, na.rm = TRUE)
+    minLat <- min(MapDat_df$MedLat, na.rm = TRUE)
+    maxLong <- max(MapDat_df$MedLong, na.rm = TRUE)
+    maxLat <- max(MapDat_df$MedLat, na.rm = TRUE)
     
     MapDat2_df <- MapDat_df %>%
      filter(SurvDate == input$sel_MapSurvey) %>%
-     select(-c(ReportingSiteName, ReportingSite, IsActive, minyr, maxyr))
+     select(-c(ReportingSiteName, ReportingSite, IsActive, MinYr, MaxYr))
   
   basemap <- leaflet() %>%
      addProviderTiles("Esri.NatGeoWorldMap")
@@ -882,13 +882,13 @@ output$coralmap = renderLeaflet({
   if(input$sel_MapMetric == "PercCoral") {
      chartmap <- basemap %>%
        addMinicharts(
-         lng = MapDat_df$medLong,
-         lat = MapDat_df$medLat,
+         lng = MapDat_df$MedLong,
+         lat = MapDat_df$MedLat,
          type = "pie",
          width = 25,
          height = 25,
          transitionTime = 0,
-         layerId = MapDat_df$poptext,
+         layerId = MapDat_df$PopText,
          chartdata = as.matrix(MapDat_df[, c("%Coral", "%NonCoral")]),
          colorPalette = c("red", "gray"),
          opacity = .85)
@@ -896,12 +896,12 @@ output$coralmap = renderLeaflet({
        if(input$sel_MapMetric == "BleachRC") {
         chartmap <- basemap %>%
           addMinicharts(
-            lng = MapDat_df$medLong,
-            lat = MapDat_df$medLat,
+            lng = MapDat_df$MedLong,
+            lat = MapDat_df$MedLat,
             type = "pie",
             width = 2*MapDat_df$`%Coral`,
             transitionTime = 0,
-            layerId = MapDat_df$poptext,
+            layerId = MapDat_df$PopText,
             chartdata = as.matrix(MapDat_df[, c("NoData", "UNBL", "BL1", "BL2", "BL3", "BL4")]),
             colorPalette = c("#FFFF00", "#404040", "#737373", "#8C8C8C", "#BFBFBF", "#EBEBEB"),
             opacity = .85
