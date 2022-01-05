@@ -162,6 +162,9 @@ FuncBootSamples <- function(dat, n_bootsamples = 1000000) {
   # Returns:
   #   Data frame of samples from parametric bootstrapping
   
+  # Convert to % cover by transect-survey
+  dat[, 5:ncol(dat)] <- dat[, 5:ncol(dat)]/dat$AdjTot 
+  
   # Create list of parametric bootstrap samples, each list element is a data frame of samples for one transect-survey
   boot_samples_list <- apply(dat, 1, FUN = function(z) { # for each transect-survey
     prob_vec <- z[5:length(z)][!is.na(z[5:length(z)])] # probability vector w/o NA's
@@ -174,12 +177,12 @@ FuncBootSamples <- function(dat, n_bootsamples = 1000000) {
   return(boot_samples_df)
 }
 
-FuncBootDraws <- function(dat, tot_df, groups_df, n_bootreps = 10000) {
+FuncBootDraws <- function(boot_dat, actual_dat, groups_df, n_bootreps = 10000) {
   # Function to calculate bootstrap CI's for % cover and relative % cover, by site-survey (for intensive sites)
   #
   # Args:
-  #   dat = data frame of the parametric bootstrap samples for all transects of a single site-survey. Requires cols for "TransectSurveyID" and each taxon. 
-  #   tot_df = data frame of the adjusted total (count) for each transect-survey for that site-survey. Use as denominator for % cover estimates
+  #   boot_dat = data frame of the parametric bootstrap samples for all transects of a single site-survey. Requires cols for "TransectSurveyID" and each taxon. 
+  #   actual_dat = data frame of the original count data used to generate parametric bootstrap samples. Same cols as boot_dat, but includes an AdjTot col.
   #   groups_df = data frame assigning each taxon to higher level groups
   #   n_bootreps = number of bootstrap reps to calculate CI's over
   #
@@ -188,26 +191,29 @@ FuncBootDraws <- function(dat, tot_df, groups_df, n_bootreps = 10000) {
   #
   # NOTE: Not estimating CI's for trend -- just individually by site-survey.
   
-  n_transects <- length(unique(dat$TransectSurveyID)) # number of transects surveyed in that site-survey
+  n_transects <- nrow(actual_dat) # number of transects surveyed in that site-survey
   
-  samps <- dat %>%
+  samps <- boot_dat %>%
     dplyr::slice_sample(n = n_draws * n_transects, replace = TRUE) %>% # randomly sample from the parametric bootstrap samples
-    tibble::rowid_to_column(var = "RowID") %>%
     as.data.frame() # can't add repeating vector column to tibble
   
-  samps[, 3:ncol(samps)][is.na(samps[, 3:ncol(samps)])] <- 0 # replace NA's with zero
+  samps[, 2:ncol(samps)][is.na(samps[, 2:ncol(samps)])] <- 0 # replace NA's with zero
   samps$BootRep = rep(1:n_draws, each = n_transects) # add col of bootstrap replicate number; each replicate has same number of transects as original data for the site-survey
     
-  # This is the master data frame from which to calculate % cover at different grouping levels
+  # Add the actual data so actual % cover and relative % cover can be simultaneously calculated for each combination of numerator and denominator groups/levels. BootRep 0 is the actual data and will be excluded for CI estimates
+  samps <- plyr::rbind.fill(samps, actual_dat %>% dplyr::select(-AdjTot) %>% dplyr::mutate(BootRep = 0)) %>%
+    tibble::rowid_to_column(var = "RowID") # after converting to long format, still need to be able to group data by row at times
+  
+  # This is the master data frame from which to calculate % cover at different grouping levels.
   samps_master <- samps %>%
     tidyr::gather(key = "Taxon", value = "Count", -BootRep, -RowID, -TransectSurveyID) %>% # convert to long format
     dplyr::left_join(groups_df, by = "Taxon")
   
-  # Calculate % cover and RELATIVE % cover for certain groupings:
+  # Calculate % cover and RELATIVE % cover for certain combinations of numerator and denominator groups/levels:
   # > % cover by Category. Denominator is adjusted total count for the sampled transect. Transects have equal weight in a BootRep.
   # > Drill down in certain categories--Calculate % cover and RELATIVE % cover by Functional Group for ALGAE and CORAL (NumerGroup = FunctionalGroup, DenomGroup = ALGAE or CORAL); and by Taxon for ALGAE, CORAL, GORGO, SPONGE (e.g., NumerGroup = Taxon, DenomGroup = GORGO). Weighted by the # of hits of the category in each transect.
   
-  # Calculate bootstrapped CI's for these groupings
+  # Calculate bootstrapped CI's for these combinations (can add to this as requested by SFCN)
   combos_df <- data.frame(rbind(
     c("Category", "AdjTot"),
     c("FunctionalGroup", "ALGAE"),
@@ -223,20 +229,28 @@ FuncBootDraws <- function(dat, tot_df, groups_df, n_bootreps = 10000) {
 
   tmp <- samps_master %>%
     dplyr::rename(NumerLevel = x[["NumerGroup"]]) %>%
-    dplyr::filter(if(x[["DenomGroup"]] != "AdjTot") Category == x[["DenomGroup"]] else TRUE) %>% # for drill down, restrict to one category
+    dplyr::filter(if(x[["DenomGroup"]] != "AdjTot") Category == x[["DenomGroup"]] else TRUE) %>% # for drill down (i.e., DenomGroup is a Category instead of AdjTot), restrict to one category; otherwise keep all categories
     dplyr::group_by(BootRep, TransectSurveyID, RowID, NumerLevel) %>%
-
     dplyr::summarize(GroupCount = sum(Count), .groups = "drop")
 
-  # For % cover, calculate per transect and then take mean across all transects in the BootRep
+  # For % cover, calculate per transect (RowID) and then take mean across all transects in the BootRep. The adjusted total count (denominator value) for any bootstrapped transect is the same as for the original data used to generate parametric bootstrap samples
   out_df <- tmp %>%
-    dplyr::left_join(tot_df, by = "TransectSurveyID") %>%
+    dplyr::left_join(actual_dat[c("TransectSurveyID", "AdjTot")], by = "TransectSurveyID") %>%
     dplyr::mutate(PercCov = GroupCount / AdjTot) %>%
     dplyr::group_by(BootRep, NumerLevel) %>%
-    dplyr::summarize(MeanPercCov = mean(PercCov), .groups = "drop") %>%
+    dplyr::summarize(EstimCov = mean(PercCov), .groups = "drop")
+  
+  # Extract the means calculated for the original data (BootRep = 0) so can be added to the final data frame
+  actual_df <- subset(out_df, BootRep == 0) %>% 
+    dplyr::select(-BootRep) 
+  
+  # Calculate % cover CI's
+  out_df %<>% 
+    dplyr::filter(BootRep != 0) %>% # remove the estimates from the actual data
     dplyr::group_by(NumerLevel) %>%
-    dplyr::summarize_at(vars(MeanPercCov), FuncPullQuant, .groups = "drop") %>%
-    dplyr::mutate(NumerGroup = x[["NumerGroup"]], DenomGroup = "AdjTot")
+    dplyr::summarize_at(vars(EstimCov), FuncPullQuant, .groups = "drop") %>%
+    dplyr::mutate(NumerGroup = x[["NumerGroup"]], DenomGroup = "AdjTot") %>%
+    dplyr::left_join(actual_df, by = "NumerLevel") # add in the mean % cov from actual data
   
   # For relative % cover, sum(numerator across all transects)/sum(denom across all transects)
   if(x[["DenomGroup"]] != "AdjTot") {
@@ -244,23 +258,31 @@ FuncBootDraws <- function(dat, tot_df, groups_df, n_bootreps = 10000) {
       dplyr::group_by(BootRep) %>%
       dplyr::summarize(CategTot = sum(GroupCount), .groups = "drop")
 
-    add_df <- tmp %>%
+    relcov_df <- tmp %>%
       dplyr::group_by(BootRep, NumerLevel) %>%
       dplyr::summarize(SampGroupCount = sum(GroupCount), .groups = "drop") %>%
       dplyr::left_join(categtot_df, by = "BootRep") %>%
-      dplyr::mutate(SiteRelCov = SampGroupCount/CategTot) %>%
+      dplyr::mutate(EstimCov = SampGroupCount/CategTot)
+    
+    # Extract the means calculated for the original data (BootRep = 0) so can be added to the final data frame
+    actual_relcov_df <- subset(relcov_df, BootRep == 0) %>% 
+      dplyr::select(NumerLevel, EstimCov) 
+    
+    # Calculate % cover CI's
+    relcov_df %<>% 
+      dplyr::filter(BootRep != 0) %>% # remove the estimates from the actual data
       dplyr::group_by(NumerLevel) %>%
-      dplyr::summarize_at(vars(SiteRelCov), FuncPullQuant, .groups = "drop") %>%
-      dplyr::mutate(NumerGroup = x[["NumerGroup"]], DenomGroup = x[["DenomGroup"]])
+      dplyr::summarize_at(vars(EstimCov), FuncPullQuant, .groups = "drop") %>%
+      dplyr::mutate(NumerGroup = x[["NumerGroup"]], DenomGroup = x[["DenomGroup"]]) %>%
+      dplyr::left_join(actual_relcov_df, by = "NumerLevel") # add in the mean % cov from actual data
 
-    out_df <- rbind(out_df, add_df)
+    out_df <- rbind(out_df, relcov_df)
   }
   
   out_df %<>%
     dplyr::mutate_if(is.numeric, round, 3) %>%  # calculate quantiles and output in nice format
-    dplyr::mutate(Category = x[["DenomGroup"]]) %>%
-    dplyr::select(Category, NumerGroup, NumerLevel, DenomGroup, everything())
-  return(out_df)
+    dplyr::mutate(Category = ifelse(x[["DenomGroup"]] == "AdjTot", "All", x[["DenomGroup"]])) %>%
+    dplyr::select(Category, NumerGroup, NumerLevel, DenomGroup, EstimCov, everything())
   })
   
   boot_CIs_df <- as.data.frame(do.call("rbind", boot_CIs_list)) # combine list elements in a single data frame
@@ -285,25 +307,22 @@ boot_site_dat <- boot_master_dat %>%
   dplyr::mutate(AdjTot = rowSums(across(4:ncol(.)), na.rm = T)) %>% # calculate total hits per transect-survey (already excludes shadow and equipment points)
   dplyr::select(Site, SurvDate, TransectSurveyID, AdjTot, everything()) # rearrange cols
 
-# Convert to % cover by transect-survey
-boot_site_dat[, 5:ncol(boot_site_dat)] <- boot_site_dat[, 5:ncol(boot_site_dat)]/boot_site_dat$AdjTot
-
 # For each transect-survey, generate parametric bootstrap samples (default is N = 1M) using the probabilities from the collected data. Run one site-survey at a time to avoid computer memory problems ---- 
 site_CIs_list <- apply(unique(boot_site_dat[c("Site", "SurvDate")]), 1, FUN = function(x) { 
-  subdat <- subset(boot_site_dat, Site == x[["Site"]] & SurvDate == x[["SurvDate"]])
-  boot_samples <- FuncBootSamples(dat = subdat, n_bootsamples = 100000 ) #<<<<<<<<<<< SMALL NUMBER JUST FOR TESTING
+  subdat <- boot_site_dat %>%
+    dplyr::filter(Site == x[["Site"]] & SurvDate == x[["SurvDate"]]) %>% # pull data for the specific site and survey date
+    dplyr::select(where(~!all(is.na(.x)))) # get rid of cols with no data
+  subdat[, 5:ncol(subdat)][is.na(subdat[, 5:ncol(subdat)])] <- 0 # and then replace the remaining NA's with 0
+  
+  # Generate parametric bootstrap samples
+  boot_samples <- FuncBootSamples(dat = subdat, n_bootsamples = 10000 ) #<<<<<<<<<<< SMALL NUMBER JUST FOR TESTING
 
-  # For each taxon, calculate quantiles from bootstrap distribution
-  boot_site_estimates <- FuncBootDraws(dat = boot_samples, tot_df = subdat[, c("TransectSurveyID", "AdjTot")], groups_df = grps_df, n_bootreps = 1000) #<<<<<<<<<<< SMALL NUMBER JUST FOR TESTING
+  # For various combinations of numerator groups and denominator groups, calculate quantiles from bootstrap distribution
+  boot_site_estimates <- FuncBootDraws(boot_dat = boot_samples, actual_dat = subdat %>% dplyr::select(-Site, -SurvDate), groups_df = grps_df, n_bootreps = 1000) #<<<<<<<<<<< SMALL NUMBER JUST FOR TESTING
   cbind("Site" = x[["Site"]], "SurvDate" = x[["SurvDate"]], boot_site_estimates)
-  })   
+  })
+
 site_CIs_df <- as.data.frame(do.call("rbind", site_CIs_list))
-
-
-# >>>>> PICK UP FROM HERE. ADD THE MEANS FROM ACTUAL DATA.
-
-
-
 
 
 
