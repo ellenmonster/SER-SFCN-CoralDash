@@ -1,7 +1,9 @@
-### CORAL BOOTSTRAP CODE FOR TOM TO LAUGH AT. CLEARLY NOT THE 8-LINE CODE TOM HAD IN MIND. 
+### CORAL BOOTSTRAP CODE FOR TOM TO LAUGH AT. CLEARLY NOT THE 8-LINE CODE TOM HAS IN MIND. I'M TOTALLY OPEN TO MOCKING SUGGESTIONS ON HOW TO REDUCE THE CODE AND MAKE IT MORE EFFICIENT AND JUST GENERALLY BETTER (ESPECIALLY IF IT'S WRONG)
 
-# USER-SPECIFIED FOR TESTING CODE ----
-boot_master_dat <- readRDS("boot_master_dat.RDS") # import the test data
+# For code testing, I'm just providing data for two sites (both are 20-transect intensive sites, so Reporting Site and Site cols are identical), a few survey dates, and three estimation groupings: 1. % cover by category, 2. % cover and relative % cover of coral functional groups, 3. % cover and relative % cover of algae taxa
+
+# USER INPUTS FOR TESTING CODE ----
+boot_master_dat <- readRDS("boot_master_dat.RDS") # import the test data. This is just data for two 
 TEST_n_bootsamples <- 10000 # number of parametric bootstrap samples per transect-survey (default value in function is 1M)
 TEST_n_bootreps <- 1000 # number of bootstrap samples per site-survey, for calculating bootstrapped confidence intervals (default value in function is 10K)
 
@@ -64,11 +66,11 @@ FuncBootDraws <- function(boot_dat, actual_dat, groups_df, n_bootreps = 10000) {
   n_transects <- nrow(actual_dat) # number of transects surveyed in that site-survey
   
   samps <- boot_dat %>%
-    dplyr::slice_sample(n = n_draws * n_transects, replace = TRUE) %>% # randomly sample from the parametric bootstrap samples
+    dplyr::slice_sample(n = n_bootreps * n_transects, replace = TRUE) %>% # randomly sample from the parametric bootstrap samples
     as.data.frame() # can't add repeating vector column to tibble
   
   samps[, 2:ncol(samps)][is.na(samps[, 2:ncol(samps)])] <- 0 # replace NA's with zero
-  samps$BootRep = rep(1:n_draws, each = n_transects) # add col of bootstrap replicate number; each replicate has same number of transects as original data for the site-survey
+  samps$BootRep = rep(1:n_bootreps, each = n_transects) # add col of bootstrap replicate number; each replicate has same number of transects as original data for the site-survey
   
   # Add the actual data so actual % cover and relative % cover can be simultaneously calculated for each combination of numerator and denominator groups/levels. BootRep 0 is the actual data and will be excluded for CI estimates
   samps <- plyr::rbind.fill(samps, actual_dat %>% dplyr::select(-AdjTot) %>% dplyr::mutate(BootRep = 0)) %>%
@@ -83,31 +85,26 @@ FuncBootDraws <- function(boot_dat, actual_dat, groups_df, n_bootreps = 10000) {
   # > % cover by Category. Denominator is adjusted total count for the sampled transect. Transects have equal weight in a BootRep.
   # > Drill down in certain categories--Calculate % cover and RELATIVE % cover by Functional Group for ALGAE and CORAL (NumerGroup = FunctionalGroup, DenomGroup = ALGAE or CORAL); and by Taxon for ALGAE, CORAL, GORGO, SPONGE (e.g., NumerGroup = Taxon, DenomGroup = GORGO). Weighted by the # of hits of the category in each transect.
   
-  # Calculate bootstrapped CI's for these combinations (can add to this as requested by SFCN)
-  combos_df <- data.frame(rbind(
-    c("Category", "AdjTot"),
-    c("FunctionalGroup", "ALGAE"),
-    c("FunctionalGroup", "CORAL"),
-    c("Taxon", "ALGAE"),
-    c("Taxon", "CORAL"),
-    c("Taxon", "GORGO"),
-    c("Taxon", "SPONGE")
-  ))
-  names(combos_df) <- c("NumerGroup", "DenomGroup")
-  
-  boot_CIs_list <- apply(combos_df, 1, FUN = function(x) {
+  # Calculate bootstrapped CI's for these combinations. 
+
+  combos_df <- tibble(
+    NumerGroup = c("Category", "FunctionalGroup", "Taxon"), 
+    DenomGroup = list(c("AdjTot", c("ALGAE", "CORAL"), c("ALGAE", "CORAL", "GORGO", "SPONGE")))
+    )
+    
+    boot_CIs_list <- apply(combos_df, 1, FUN = function(x) {
     
     tmp <- samps_master %>%
       dplyr::rename(NumerLevel = x[["NumerGroup"]]) %>%
-      dplyr::filter(if(x[["DenomGroup"]] != "AdjTot") Category == x[["DenomGroup"]] else TRUE) %>% # for drill down (i.e., DenomGroup is a Category instead of AdjTot), restrict to one category; otherwise keep all categories
-      dplyr::group_by(BootRep, TransectSurveyID, RowID, NumerLevel) %>%
+      dplyr::filter(if(any(data.frame(x[["DenomGroup"]])$x[["DenomGroup"]] %in% unique(samps_master$Category))) Category %in% x[["DenomGroup"]] else TRUE) %>% # with if() or switch() need to convert x[["DenomGroup"]] to a data frame first so it doesn't balk about vectors with more than one item
+      dplyr::group_by(BootRep, TransectSurveyID, RowID, Category, NumerLevel) %>%
       dplyr::summarize(GroupCount = sum(Count), .groups = "drop")
     
     # For % cover, calculate per transect (RowID) and then take mean across all transects in the BootRep. The adjusted total count (denominator value) for any bootstrapped transect is the same as for the original data used to generate parametric bootstrap samples
     out_df <- tmp %>%
       dplyr::left_join(actual_dat[c("TransectSurveyID", "AdjTot")], by = "TransectSurveyID") %>%
       dplyr::mutate(PercCov = GroupCount / AdjTot) %>%
-      dplyr::group_by(BootRep, NumerLevel) %>%
+      dplyr::group_by(BootRep, Category, NumerLevel) %>% # grouping by Category just to keep the column in the output
       dplyr::summarize(EstimCov = mean(PercCov), .groups = "drop")
     
     # Extract the means calculated for the original data (BootRep = 0) so can be added to the final data frame
@@ -117,41 +114,40 @@ FuncBootDraws <- function(boot_dat, actual_dat, groups_df, n_bootreps = 10000) {
     # Calculate % cover CI's
     out_df %<>% 
       dplyr::filter(BootRep != 0) %>% # remove the estimates from the actual data
-      dplyr::group_by(NumerLevel) %>%
+      dplyr::group_by(Category, NumerLevel) %>%
       dplyr::summarize_at(vars(EstimCov), FuncPullQuant, .groups = "drop") %>%
-      dplyr::mutate(NumerGroup = x[["NumerGroup"]], DenomGroup = "AdjTot") %>%
-      dplyr::left_join(actual_df, by = "NumerLevel") # add in the mean % cov from actual data
+      dplyr::mutate(NumerGroup = x[["NumerGroup"]], DenomGroup = "TransectCount") %>%
+      dplyr::left_join(actual_df, by = c("Category","NumerLevel")) # add in the mean % cov from actual data
     
     # For relative % cover, sum(numerator across all transects)/sum(denom across all transects)
-    if(x[["DenomGroup"]] != "AdjTot") {
+    if(any(data.frame(x[["DenomGroup"]])$x[["DenomGroup"]] %in% unique(samps_master$Category))) {
       categtot_df <- tmp %>%
-        dplyr::group_by(BootRep) %>%
+        dplyr::group_by(BootRep, Category) %>%
         dplyr::summarize(CategTot = sum(GroupCount), .groups = "drop")
       
       relcov_df <- tmp %>%
-        dplyr::group_by(BootRep, NumerLevel) %>%
+        dplyr::group_by(BootRep, Category, NumerLevel) %>%
         dplyr::summarize(SampGroupCount = sum(GroupCount), .groups = "drop") %>%
-        dplyr::left_join(categtot_df, by = "BootRep") %>%
+        dplyr::left_join(categtot_df, by = c("BootRep", "Category")) %>%
         dplyr::mutate(EstimCov = SampGroupCount/CategTot)
       
       # Extract the means calculated for the original data (BootRep = 0) so can be added to the final data frame
       actual_relcov_df <- subset(relcov_df, BootRep == 0) %>% 
-        dplyr::select(NumerLevel, EstimCov) 
+        dplyr::select(Category, NumerLevel, EstimCov) 
       
       # Calculate % cover CI's
       relcov_df %<>% 
         dplyr::filter(BootRep != 0) %>% # remove the estimates from the actual data
-        dplyr::group_by(NumerLevel) %>%
+        dplyr::group_by(Category, NumerLevel) %>%
         dplyr::summarize_at(vars(EstimCov), FuncPullQuant, .groups = "drop") %>%
-        dplyr::mutate(NumerGroup = x[["NumerGroup"]], DenomGroup = x[["DenomGroup"]]) %>%
-        dplyr::left_join(actual_relcov_df, by = "NumerLevel") # add in the mean % cov from actual data
+        dplyr::mutate(NumerGroup = x[["NumerGroup"]], DenomGroup = "CategoryCount") %>%
+        dplyr::left_join(actual_relcov_df, by = c("Category", "NumerLevel")) # add in the mean % cov from actual data
       
       out_df <- rbind(out_df, relcov_df)
     }
     
     out_df %<>%
       dplyr::mutate_if(is.numeric, round, 3) %>%  # calculate quantiles and output in nice format
-      dplyr::mutate(Category = ifelse(x[["DenomGroup"]] == "AdjTot", "All", x[["DenomGroup"]])) %>%
       dplyr::select(Category, NumerGroup, NumerLevel, DenomGroup, EstimCov, everything())
   })
   
