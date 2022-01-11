@@ -23,7 +23,7 @@ lapply(pkgList, library, character.only = TRUE)
 options(shiny.maxRequestSize = 20*1024^2) # allows data files up to 20 MB to be imported
 # source("Corals.R")
 
-rv <- reactiveValues(rawdat = NULL, CalcRepSites = NULL, Warn_list = NULL, PC_options = NULL, PC_Site = NULL, SS_PointCount = NULL, SS_PercCov = NULL, RC_Site = NULL, Bleach = NULL, mapdat = NULL, coraldat = NULL)
+rv <- reactiveValues(rawdat = NULL, CalcRepSites = NULL, warn_list = NULL, PC_options = NULL, PC_Site = NULL, SS_PointCount = NULL, SS_PercCov = NULL, RC_Site = NULL, Bleach = NULL, map_dat = NULL, coraldat = NULL)
 
 rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL, sel_showRSS = NULL, sel_sublev = NULL)
 ```
@@ -58,14 +58,14 @@ observeEvent(eventExpr = input$summaryfile, {
  
   rv <- sapply(names(out), FUN = function(i) {rv[[i]] <- out[[i]]}, simplify = FALSE)
   # rv$CalcRepSites <- out$CalcRepSites
-  # rv$Warn_list <- out$Warn_list
+  # rv$warn_list <- out$warn_list
   # rv$PC_options <- out$PC_options
   # rv$PC_Site <- out$PC_Site
   # rv$SS_PointCount <- out$SS_PointCount
   # rv$SS_PercCov <- out$SS_PercCov
   # rv$RC_Site <- out$RC_Site
   # rv$Bleach <- out$Bleach
-  # rv$mapdat <- out$mapdat
+  # rv$map_dat <- out$map_dat
   # rv$coraldat <- out$coraldat
   
   rv_param_temp <- reactiveValues(dat_PC = NULL, PC_avail_sublevs = NULL, dat_RC = NULL, sel_showRSS = NULL, sel_sublev = NULL)
@@ -242,8 +242,8 @@ Column
 br()
 
 renderTable({
-  validate(need(!is.null(rv$Warn_list), message = FALSE))
-  AltPurp <- rv$Warn_list$AltPurp
+  validate(need(!is.null(rv$warn_list), message = FALSE))
+  AltPurp <- rv$warn_list$AltPurp
   validate(need(nrow(AltPurp) > 0, "No warnings to show"))
   AltPurp
   }, align = "c", na = "--", include.rownames = FALSE)
@@ -253,8 +253,8 @@ br()
 **SURVEY TRIPS WITH MISSING TAXON CODES OR RECORDED AS "NO TAXON"**
 ```{r}
 renderTable({
-  validate(need(!is.null(rv$Warn_list), message = FALSE))
-  NoTaxon <- rv$Warn_list$UNKTaxon
+  validate(need(!is.null(rv$warn_list), message = FALSE))
+  NoTaxon <- rv$warn_list$UNKTaxon
   validate(need(nrow(NoTaxon) > 0, "No warnings to show"))
   NoTaxon
   }, align = "c", na = "--", include.rownames = FALSE)
@@ -265,8 +265,8 @@ br()
 *(These data are excluded from bleaching analyses)*
 ```{r}
 renderTable({
-  validate(need(!is.null(rv$Warn_list), message = FALSE))
-  BleachCode <- rv$Warn_list$BleachCode
+  validate(need(!is.null(rv$warn_list), message = FALSE))
+  BleachCode <- rv$warn_list$BleachCode
   validate(need(nrow(BleachCode) > 0, "No warnings to show"))
   BleachCode
   }, align = "c", na = "--", include.rownames = FALSE)
@@ -276,8 +276,8 @@ br()
 **SITE-SURVEYS WITH TRANSECT COUNTS OTHER THAN 4 OR 20**
 ```{r}
 renderTable({
-  validate(need(!is.null(rv$Warn_list), message = FALSE))
-  TransCount <- rv$Warn_list$TransCount
+  validate(need(!is.null(rv$warn_list), message = FALSE))
+  TransCount <- rv$warn_list$TransCount
   validate(need(nrow(TransCount) > 0, "No warnings to show"))
   TransCount$`Survey Date` <- as.character(lubridate::ymd(TransCount$`Survey Date`)) # renderTable does not play nice with dates--need to format as character
   TransCount
@@ -288,8 +288,8 @@ br()
 **TRANSECT SURVEYS WITH TOTAL TAXON COUNTS NOT DIVISIBLE BY 10**
 ```{r}
 renderTable({
-  validate(need(!is.null(rv$Warn_list), message = FALSE))
-  TaxonCountDiv <- rv$Warn_list$TaxonCountDiv
+  validate(need(!is.null(rv$warn_list), message = FALSE))
+  TaxonCountDiv <- rv$warn_list$TaxonCountDiv
   validate(need(nrow(TaxonCountDiv) > 0, "No warnings to show"))
   TaxonCountDiv
   }, align = "c", na = "--", include.rownames = FALSE)
@@ -299,8 +299,8 @@ br()
 **TRANSECT SURVEYS WITH TOTAL TAXON COUNTS LESS THAN 200 OR GREATER THAN 480**
 ```{r}
 renderTable({
-  validate(need(!is.null(rv$Warn_list), message = FALSE))
-  TaxonCount <- rv$Warn_list$TaxonCount
+  validate(need(!is.null(rv$warn_list), message = FALSE))
+  TaxonCount <- rv$warn_list$TaxonCount
   validate(need(nrow(TaxonCount) > 0, "No warnings to show"))
   TaxonCount
   }, align = "c", na = "--", include.rownames = FALSE)
@@ -310,8 +310,8 @@ br()
 **TRANSECT SURVEYS WITH EQUIPMENT OR SHADOW HITS EXCEEDING 5% OF TOTAL TAXON COUNTS**
 ```{r}
 renderTable({
-  validate(need(!is.null(rv$Warn_list), message = FALSE))
-  EquipShadowCount <- rv$Warn_list$ShadowCount
+  validate(need(!is.null(rv$warn_list), message = FALSE))
+  EquipShadowCount <- rv$warn_list$ShadowCount
   validate(need(nrow(ShadowCount) > 0, "No warnings to show"))
   ShadowCount
   }, align = "c", na = "--", include.rownames = FALSE)
@@ -321,8 +321,8 @@ br()
 **TRANSECT SURVEYS WITH UNKNOWN ("UNK") HITS EXCEEDING 5% OF TOTAL TAXON COUNTS**
 ```{r}
 renderTable({
-  validate(need(!is.null(rv$Warn_list), message = FALSE))
-  UNKCount <- rv$Warn_list$UNKCount
+  validate(need(!is.null(rv$warn_list), message = FALSE))
+  UNKCount <- rv$warn_list$UNKCount
   validate(need(nrow(UNKCount) > 0, "No warnings to show"))
   UNKCount
   }, align = "c", na = "--", include.rownames = FALSE)
@@ -387,9 +387,9 @@ br(),
       }), style = "font-size:14px; color:red; font-weight:bold;"),
 
     renderUI({
-      shiny::req(!is.null(rv$mapdat), !is.null(input$sel_spatialscale), !is.null(input$PCactive))
+      shiny::req(!is.null(rv$map_dat), !is.null(input$sel_spatialscale), !is.null(input$PCactive))
       
-      RSS_choices <- rv$mapdat %>%
+      RSS_choices <- rv$map_dat %>%
         dplyr::filter(if(input$PCactive == TRUE) IsActive == 1 else TRUE) %>%
         {if(input$sel_spatialscale == "SiteSurvID") dplyr::select(., Site) else dplyr::select(., ReportingSite)} %>%
         dplyr::distinct() %>%
@@ -631,8 +631,8 @@ Inputs {.sidebar data-width=250}
 checkboxInput("tabactive", label = "Show active sites only", value = FALSE, width = "95%")
 
 renderUI({
-  if(!is.null(rv$mapdat)) {
-    tabsites <- rv$mapdat %>%
+  if(!is.null(rv$map_dat)) {
+    tabsites <- rv$map_dat %>%
     {if (input$tabactive == TRUE) filter(., IsActive == 1) else filter(., IsActive %in% c(0,1))} %>%
       select(RSS = Site) %>%
       distinct()
@@ -734,8 +734,8 @@ radioButtons("sel_blsitelev",
 checkboxInput("blactive", label = "Show active sites only", value = FALSE)
 
 renderUI({
-  if(!is.null(rv$mapdat)) {
-    blsites <- rv$mapdat %>%
+  if(!is.null(rv$map_dat)) {
+    blsites <- rv$map_dat %>%
     {if (input$blactive == TRUE) filter(., IsActive == 1) else filter(., IsActive %in% c(0,1))} %>%
     {if (input$sel_blsitelev == "SiteSurvID") select(., Site) else select(., ReportingSite)} %>%
       distinct()
@@ -858,13 +858,13 @@ Column {data-width=550 vertical_layout: fill}
 ```{r maps}
 output$coralmap = renderLeaflet({
   if(!is.null(input$sel_MapSurvey)) {
-    validate(need(!is.null(rv$mapdat), message = "Map data have not been processed."))
+    validate(need(!is.null(rv$map_dat), message = "Map data have not been processed."))
     
     if(input$MapActive) {
-    MapDat_df <- rv$mapdat %>%
+    MapDat_df <- rv$map_dat %>%
       filter(IsActive == TRUE)
     } else {
-      MapDat_df <- rv$mapdat
+      MapDat_df <- rv$map_dat
     }
     
     minLong <- min(MapDat_df$MedLong, na.rm = TRUE)
