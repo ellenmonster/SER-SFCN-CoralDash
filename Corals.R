@@ -7,6 +7,7 @@
 pkgList_pre <- c("magrittr", 
                  "plyr",
                  "lubridate",
+                 "tidyselect", # for where() function
                  "purrr", # to map functions to elements
                  "tidyverse") # broom, units
 inst_pre <- pkgList_pre %in% installed.packages()
@@ -52,7 +53,7 @@ FuncBootSamples <- function(dat, start_col, n_bootsamples = 100000) {
   return(boot_samples_df)
 }
 
-FuncBootDraws <- function(boot_dat, actual_dat, start_col, groups_df, combos_df, key_col, n_bootreps = 10000) {
+FuncBootDraws <- function(boot_dat, actual_dat, start_col, groups_df, combos_df, key_col, n_bootreps = 5000) {
   # Function to calculate bootstrap CI's for % cover and relative % cover, by site-survey (for intensive sites)
   #
   # Args:
@@ -168,9 +169,10 @@ FuncBootDraws <- function(boot_dat, actual_dat, start_col, groups_df, combos_df,
     
     out_df %<>%
       dplyr::mutate_if(is.numeric, round, 3) %>%  # calculate quantiles and output in nice format
-      dplyr::select(Category, NumerGroup, NumerLevel, DenomGroup, EstimCov, everything())
+      dplyr::mutate(N = n_transects) %>%
+      dplyr::select(Category, NumerGroup, NumerLevel, DenomGroup, N, EstimCov, everything())
     
-    # out_df$EstimCov[is.na(out_df$EstimCov)] <- 0
+    out_df$EstimCov[is.na(out_df$EstimCov)] <- 0
     
     # out_df[, 5:ncol(out_df)][is.na(out_df[, 5:ncol(out_df)])] <- 0
     
@@ -181,7 +183,7 @@ FuncBootDraws <- function(boot_dat, actual_dat, start_col, groups_df, combos_df,
   return(boot_CIs_df)
   }
 
-FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_df, key_col, n_bootreps = 10000) {
+FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_df, key_col, n_bootreps = 5000) {
   # Function to calculate bootstrap CI's for % cover and relative % cover, by site-survey (for RS sites). Some repetitiveness with FuncBootDraws
   #
   # Args:
@@ -308,7 +310,8 @@ FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_d
     
     out_df %<>%
       dplyr::mutate_if(is.numeric, round, 3) %>%  # calculate quantiles and output in nice format
-      dplyr::select(Category, NumerGroup, NumerLevel, DenomGroup, EstimCov, everything())
+      dplyr::mutate(N = length(subsites)) %>%
+      dplyr::select(Category, NumerGroup, NumerLevel, DenomGroup, N, EstimCov, everything())
     out_df$EstimCov[is.na(out_df$EstimCov)] <- 0
     
     # out_df[, 5:ncol(out_df)][is.na(out_df[, 5:ncol(out_df)])] <- 0
@@ -320,18 +323,16 @@ FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_d
   return(boot_CIs_df)
 }
 
-# FuncCorals <- function(filenam, sitesfilenam = NULL, out_prefix, run_parallel, set_cores = 1) {
+FuncCorals <- function(filenam, sitesfilenam = NULL, out_prefix) {
 
-### IMPORT AND FORMAT DATA ----
-# coral <- read_csv(filenam)
-# if(!is.null(sitesfilenam)) tbl_link <- read_csv(sitesfilenam)
+# ### IMPORT AND FORMAT DATA ----
+coral <- read_csv(filenam)
+if(!is.null(sitesfilenam)) tbl_link <- read_csv(sitesfilenam)
 
-#  <<<<<<<< TESTING >>>>>>>>>>>>>> ----
-coral <- read_csv("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- read_csv("Data_LOCAL_ONLY/demo_CoralDat.csv")
-out_prefix="test"
-# run_parallel=TRUE
-# set_cores=11
-tbl_link <- read_csv("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
+# #  <<<<<<<< TESTING >>>>>>>>>>>>>> ----
+# coral <- read_csv("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- read_csv("Data_LOCAL_ONLY/demo_CoralDat.csv")
+# out_prefix="test"
+# tbl_link <- read_csv("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
 
 # Format columns ----
 coral$Date <- lubridate::mdy(coral$Date)
@@ -354,7 +355,7 @@ coral$Category[coral$Category %in% c("UNKNOWN") | is.na(coral$Category)] <- "UNK
 coral$Taxon[coral$Taxon %in% c("No Taxon") | is.na(coral$Taxon)] <- "UNK"
 coral$FunctionalGroup[is.na(coral$FunctionalGroup)] <- paste(coral$Category[is.na(coral$FunctionalGroup)], "UNGROUPED", sep = "_")
 
-# ### POPULATE LIST OF WARNINGS ----
+### POPULATE LIST OF WARNINGS ----
 warn_list <- sapply(c("AltPurp", "UNKTaxon", "BleachCode", "TransCount", "TaxonCountDiv", "TaxonCount", "EquipShadowCount", "UNKCount"), function(x) NULL)
 
 warn_list$AltPurp <- coral %>%
@@ -492,7 +493,7 @@ bleach_combos_df <- tibble(
 # First, work with taxon count data
 # For each transect-survey, generate parametric bootstrap samples (default is N = 1M) using the probabilities from the collected data. Run one site-survey at a time to avoid computer memory problems
 site_CIs_list <- apply(unique(boot_site_dat[c( "Site", "SurvDate")]), 1, FUN = function(x) {
-  cat(x)
+ 
   subdat <- boot_site_dat %>%
     dplyr::filter(Site == x[["Site"]] & SurvDate == x[["SurvDate"]]) %>% # pull data for the specific site and survey date
     dplyr::select(where(~!all(is.na(.x)))) # get rid of cols with no data
@@ -500,7 +501,7 @@ site_CIs_list <- apply(unique(boot_site_dat[c( "Site", "SurvDate")]), 1, FUN = f
   
   # Generate parametric bootstrap samples
   boot_samples <- FuncBootSamples(dat = subdat, start_col = start_col)
-  boot_samples %<>% mutate(across(where(is.numeric), as.numeric)) # this addresses an unusual problem of columns being nested matrices
+  boot_samples %<>% dplyr::mutate(across(where(is.numeric), as.numeric)) # this addresses an unusual problem of columns being nested matrices
   
   # Grab the actual data to send to boot draws function
   actual_dat <- subdat
@@ -508,11 +509,12 @@ site_CIs_list <- apply(unique(boot_site_dat[c( "Site", "SurvDate")]), 1, FUN = f
   actual_dat[, start_col:ncol(actual_dat)][is.na(actual_dat[,  start_col:ncol(actual_dat)])] <- 0 # and then replace the remaining NA's with 0
 
   # For various combinations of numerator groups and denominator groups, calculate quantiles from bootstrap distribution
-  boot_site_estimates <- FuncBootDraws(boot_dat = boot_samples, start_col = start_col, actual_dat = actual_dat, groups_df = grps_df, combos_df = combos_df, key_col = "Taxon", n_bootreps = 100) # <<<<<<<<<<<<<<< SMALL NUMBER FOR TESTING
+  boot_site_estimates <- FuncBootDraws(boot_dat = boot_samples, start_col = start_col, actual_dat = actual_dat, groups_df = grps_df, combos_df = combos_df, key_col = "Taxon")
   
-  final_df <- cbind("Site" = x[["Site"]], "SurvDate" = x[["SurvDate"]], boot_site_estimates)
+  cbind("SiteScale" = "Site", "ReportingSite" = mapdat$ReportingSite[mapdat$Site == x[["Site"]]], "Site" = x[["Site"]], "RSS" = x[["Site"]], "SurvDate" = x[["SurvDate"]], boot_site_estimates)
   })
 site_CIs_df <- as.data.frame(do.call("rbind", site_CIs_list))
+site_CIs_df$SurvDate <- lubridate::ymd(site_CIs_df$SurvDate)
 
 # Site-level coral bleaching estimates ----
 # Seems like most of the bleaching is in the Orbicella functional group. Within that, OFAV is the one least affected, there are 3 taxa highly affected. Raw data plots will show this.
@@ -535,7 +537,7 @@ site_bleach_CIs_list <- apply(unique(boot_bleach_dat[c("Site", "SurvDate")]), 1,
   bleach_start_col = 5
   
   # Generate parametric bootstrap samples
-  boot_bleach_samples <- FuncBootSamples(dat = bleach_subdat, start_col = bleach_start_col, n_bootsamples = 100000)
+  boot_bleach_samples <- FuncBootSamples(dat = bleach_subdat, start_col = bleach_start_col)
   boot_bleach_samples %<>% mutate(across(where(is.numeric), as.numeric)) # this addresses an unusual problem of columns being nested matrices
   
   # Grab the actual data to send to boot draws function
@@ -543,10 +545,11 @@ site_bleach_CIs_list <- apply(unique(boot_bleach_dat[c("Site", "SurvDate")]), 1,
   actual_bleach_dat[, bleach_start_col:ncol(actual_bleach_dat)][is.na(actual_bleach_dat[,  bleach_start_col:ncol(actual_bleach_dat)])] <- 0 # and then replace the remaining NA's with 0
   
   # For various combinations of numerator groups and denominator groups, calculate quantiles from bootstrap distribution
-  boot_bleach_estimates <- FuncBootDraws(boot_dat = boot_bleach_samples, start_col = bleach_start_col, actual_dat = actual_bleach_dat, groups_df = bleach_grps_df, combos_df = bleach_combos_df, key_col = "BleachingCode", n_bootreps = 100) #<<<<<<<<<<< SMALL NUMBER JUST FOR TESTING
-  cbind("Site" = x[["Site"]], "SurvDate" = x[["SurvDate"]], boot_bleach_estimates)
+  boot_bleach_estimates <- FuncBootDraws(boot_dat = boot_bleach_samples, start_col = bleach_start_col, actual_dat = actual_bleach_dat, groups_df = bleach_grps_df, combos_df = bleach_combos_df, key_col = "BleachingCode")
+  cbind("SiteScale" = "Site", "ReportingSite" = mapdat$ReportingSite[mapdat$Site == x[["Site"]]], "Site" = x[["Site"]], "RSS" = x[["Site"]], "SurvDate" = x[["SurvDate"]], boot_bleach_estimates)
   })
 site_bleach_CIs_df <- as.data.frame(do.call("rbind", site_bleach_CIs_list))
+site_bleach_CIs_df$SurvDate <- lubridate::ymd(site_bleach_CIs_df$SurvDate)
 
 ## REPORTING SITE-LEVEL ESTIMATES ----
 # For each reporting site, these are the only survey dates to use for reporting site estimates (because all sites were surveyed in these years)
@@ -564,7 +567,6 @@ RS_estim_dates <- boot_master_dat %>%
 # Reporting site-level cover estimates ----
 # For each combination of reporting site and survey date
 RS_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate")]), 1, FUN = function(x) {
-  # x<-unique(RS_estim_dates[c( "ReportingSite", "SurvDate")])[1,] # <<<<<<<<<<
   
   subsites <- RS_estim_dates %>% dplyr::filter(ReportingSite == x[["ReportingSite"]] & SurvDate == x[["SurvDate"]]) %>% dplyr::pull(Site) # these are the sites in that RS with that survey date
   RS_subdat <- boot_site_dat %>%
@@ -573,7 +575,7 @@ RS_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate")]), 1,
   RS_start_col = 5
   
   # Generate parametric bootstrap samples
-  boot_RS_samples <- FuncBootSamples(dat = RS_subdat, start_col = RS_start_col, n_bootsamples = 10000) # <<<<<<<<
+  boot_RS_samples <- FuncBootSamples(dat = RS_subdat, start_col = RS_start_col)
   boot_RS_samples %<>% mutate(across(where(is.numeric), as.numeric)) # this addresses an unusual problem of columns being nested matrices
   
   boot_RS_list <- split(boot_RS_samples, f = boot_RS_samples$Site) # split samples so each list element is a site
@@ -584,15 +586,13 @@ RS_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate")]), 1,
   actual_RS_dat[, RS_start_col:ncol(actual_RS_dat)][is.na(actual_RS_dat[,  RS_start_col:ncol(actual_RS_dat)])] <- 0 # and then replace the remaining NA's with 0
   
   # For various combinations of numerator groups and denominator groups, calculate RS quantiles from bootstrap distribution
-  boot_RS_estimates <- FuncBootDrawsRS(boot_dat = boot_RS_list, start_col = RS_start_col, actual_dat = actual_RS_dat, groups_df = grps_df, combos_df = combos_df, key_col = "Taxon", n_bootreps = 100) # <<<<<<<<<<<<<<< SMALL NUMBER FOR TESTING
+  boot_RS_estimates <- FuncBootDrawsRS(boot_dat = boot_RS_list, start_col = RS_start_col, actual_dat = actual_RS_dat, groups_df = grps_df, combos_df = combos_df, key_col = "Taxon")
   
-  # boot_dat = boot_RS_list; start_col = RS_start_col; actual_dat = actual_RS_dat; groups_df = grps_df; combos_df = combos_df; key_col = "Taxon"; n_bootreps = 100
-  
-  cbind("ReportingSite" = x[["ReportingSite"]], "SurvDate" = x[["SurvDate"]], boot_RS_estimates)
+  cbind("SiteScale" = "ReportingSite", "ReportingSite" = x[["ReportingSite"]], "Site" = NA, "RSS" = x[["ReportingSite"]], "SurvDate" = x[["SurvDate"]], boot_RS_estimates)
 })
 
 RS_CIs_df <- as.data.frame(do.call("rbind", RS_CIs_list))
-
+RS_CIs_df$SurvDate <- lubridate::ymd(RS_CIs_df$SurvDate)
 
 # Reporting site-level coral bleaching estimates ----
 # For each reporting site-survey, generate parametric bootstrap samples 
@@ -607,7 +607,7 @@ RS_bleach_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate"
   RS_bleach_start_col = 5
   
   # Generate parametric bootstrap samples
-  boot_RS_bleach_samples <- FuncBootSamples(dat = RS_bleach_subdat, start_col = RS_bleach_start_col, n_bootsamples = 100000)
+  boot_RS_bleach_samples <- FuncBootSamples(dat = RS_bleach_subdat, start_col = RS_bleach_start_col)
   boot_RS_bleach_samples %<>% mutate(across(where(is.numeric), as.numeric)) # this addresses an unusual problem of columns being nested matrices
   
   boot_RS_bleach_list <- split(boot_RS_bleach_samples, f = boot_RS_bleach_samples$Site) # split samples so each list element is a site
@@ -617,11 +617,13 @@ RS_bleach_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate"
   actual_RS_bleach_dat[, RS_bleach_start_col:ncol(actual_RS_bleach_dat)][is.na(actual_RS_bleach_dat[,  RS_bleach_start_col:ncol(actual_RS_bleach_dat)])] <- 0 # and then replace the remaining NA's with 0
   
   # For various combinations of numerator groups and denominator groups, calculate quantiles from bootstrap distribution
-  boot_RS_bleach_estimates <- FuncBootDrawsRS(boot_dat = boot_RS_bleach_list, start_col = RS_bleach_start_col, actual_dat = actual_RS_bleach_dat, groups_df = bleach_grps_df, combos_df = bleach_combos_df, key_col = "BleachingCode", n_bootreps = 100) #<<<<<<<<<<< SMALL NUMBER JUST FOR TESTING
-  cbind("ReportingSite" = x[["ReportingSite"]], "SurvDate" = x[["SurvDate"]], boot_RS_bleach_estimates)
+  boot_RS_bleach_estimates <- FuncBootDrawsRS(boot_dat = boot_RS_bleach_list, start_col = RS_bleach_start_col, actual_dat = actual_RS_bleach_dat, groups_df = bleach_grps_df, combos_df = bleach_combos_df, key_col = "BleachingCode") 
+  
+  cbind("SiteScale" = "ReportingSite", "ReportingSite" = x[["ReportingSite"]], "Site" = NA, "RSS" = x[["ReportingSite"]], "SurvDate" = x[["SurvDate"]], boot_RS_bleach_estimates)
 })
 
 RS_bleach_CIs_df <- as.data.frame(do.call("rbind", RS_bleach_CIs_list))
+RS_bleach_CIs_df$SurvDate <- lubridate::ymd(RS_bleach_CIs_df$SurvDate)
 
 ### ADD CORAL NUMBERS TO MAPDAT ----
 
@@ -642,15 +644,32 @@ BleachRelCov <- site_bleach_CIs_df %>%
 
 mapdat2 <- mapdat %>%
   full_join(BleachRelCov, by = "Site") %>%
-  mutate(PopText = paste0(PopText, ": ", SurvDate))
+  left_join(coral[c("Site", "SurvDate", "Purpose")] %>% distinct(), by = c("Site", "SurvDate")) %>% # add Purpose info
+  mutate(PopText = paste0(PopText, ": ", SurvDate, "(", Purpose, ")")) %>%
+  dplyr::select("ReportingSite", "ReportingSiteName", "Site", "IsActive", "NumTransects", "MinYr", "MaxYr", "MedLat", "MedLong", "SurvDate", "Purpose", "PopText", "%Coral", "%NonCoral", "UNBL", "BL1", "BL2", "BL3", "BL4", "NoData") # order columns
+
+cover_CIs_df <- rbind( # additional info on site-survey
+  site_CIs_df %>% 
+    left_join(coral[c("Site", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("Site", "SurvDate")), 
+  RS_CIs_df %>%
+    left_join(coral[c("ReportingSite", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("ReportingSite", "SurvDate"))
+  ) %>%
+  dplyr::select(SiteScale, ReportingSite, Site, RSS, IsActive, SurvDate, Purpose, N, everything())
+
+bleach_CIs_df <- rbind(
+  site_bleach_CIs_df %>% 
+    left_join(coral[c("Site", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("Site", "SurvDate")), 
+  RS_bleach_CIs_df %>%
+    left_join(coral[c("ReportingSite", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("ReportingSite", "SurvDate"))
+) %>%
+  dplyr::select(SiteScale, ReportingSite, Site, RSS, IsActive, SurvDate, Purpose, N, everything())
 
 out_list <- list(raw_dat = coral, # the raw data include equipment and shadow counts; only annual and episodic surveys included
                  map_dat = mapdat2,
+                 groups_df = grps_df,
                  warn_list = warn_list,
-                 site_CIs_df = site_CIs_df,
-                 site_bleach_CIs_df = site_bleach_CIs_df,
-                 RS_CIs_df = RS_CIs_df,
-                 RS_bleach_CIs_df = RS_bleach_CIs_df)
+                 cover_CIs_df = cover_CIs_df,
+                 bleach_CIs_df = bleach_CIs_df)
 saveRDS(out_list, paste0(out_prefix, "_coralsummary.RDS"))
 }
 
