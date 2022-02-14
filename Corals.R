@@ -7,6 +7,7 @@
 pkgList_pre <- c("magrittr", 
                  "plyr",
                  "lubridate",
+                 "ggpubr", # to get legends
                  "tidyselect", # for where() function
                  "purrr", # to map functions to elements
                  "tidyverse") # broom, units

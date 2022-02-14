@@ -25,9 +25,145 @@ source("Corals.R")
 
 rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list = NULL, cover_CIs_df = NULL, bleach_CIs_df = NULL)
 
-rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_sublev = NULL)
+rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_sublev = NULL, shared_legends)
 
-  cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
+```
+
+```{r functions}
+
+FuncPlotPointCI <- function(dat = rv_param_temp$dat_PC, denom = "TransectCount", sel_error = "90%CI", sel_splitplot = input$sel_splitplot, PCy_max = input$PCy_max, y_text = paste0("% Cover (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite) {
+  # Function to generate point plots with error bars
+  #
+  # Args:
+  #   CI_dat:  The CI data frame
+  #   denom: "TransectCount" for % cover or "CategoryCount" for relative % cover
+  #   combine_stations:  TRUE to combine multiple stations in a single plot of a characteristic
+  #   fixed_free_y:  Are scales fixed or free across all plots?
+  #
+  # Returns:
+  #   List of point plots with error bars
+  # 
+  
+  # Colorblind-friendly palette
+  cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") 
+  
+  # Set up the data
+  plot_dat <- dat %>%
+    dplyr::filter(DenomGroup == denom) %>% 
+    dplyr::rename(
+      y_val = EstimCov,
+      CI_low = contains(paste0(sel_error, "_low")),
+      CI_high = contains(paste0(sel_error, "_high")))
+  
+  # All plots share a single x-axis
+  xaxes_min = min(plot_dat$SurvDate, na.rm = TRUE)
+  xaxes_max = max(plot_dat$SurvDate, na.rm = TRUE)
+  
+  # Plot-end function
+  FuncPlotEnd <- function(p) {
+    p_final <- p + 
+      scale_x_date(date_breaks = "1 year", date_labels = "%Y", breaks = scales::pretty_breaks(), limits = c(xaxes_min, xaxes_max)) +
+      scale_y_continuous(breaks = pretty_breaks()) +
+      expand_limits(y = switch(is.null(PCy_max)+1, c(0, PCy_max, 0), 0)) +
+      theme_bw(base_size = 12) +
+      theme(strip.text = element_text(size = 12, face = "bold"),
+            strip.text.y = element_blank(), 
+            legend.title = element_blank(),
+            legend.position = "top") 
+    
+    return(p_final)
+  }
+  
+  # Create the plot(s)
+  p_points_list <- list()
+  
+  # One_loc_one_sub
+  if(sel_splitplot == "one_loc_one_sub") {
+    unique_df <- plot_dat %>%
+      dplyr::select(RSS, NumerLevel) %>% 
+      dplyr::distinct() %>%
+      arrange(RSS, NumerLevel)
+    
+    for (v in 1:nrow(unique_df)) { # for each loc-sub
+      dat_df <- plot_dat %>%
+        dplyr::filter(RSS == unique_df$RSS[v] & NumerLevel == unique_df$NumerLevel[v])
+      
+      p_points <- 
+        ggplot(data = dat_df, aes(x = SurvDate, y = y_val, N = N, CI_low = CI_low, CI_high = CI_high)) +
+        labs(x = "Year", y = y_text) +
+        geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>N: ", N, "<br>% Cover: ", y_val, "<br>CI low end: ", CI_low, "<br>CI high end: ", CI_high)), size = 2) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+        geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = .45) +
+        geom_line(alpha = 0.3)
+      
+      p_points_final <- FuncPlotEnd(p = p_points) +
+        facet_wrap(RSS ~ NumerLevel, labeller = label_wrap_gen(multi_line=FALSE), ncol = 1)
+      p_points_list[[v]] <- p_points_final
+    }
+  }
+
+  # One_loc_many_sub
+  if (sel_splitplot == "one_loc_many_sub") {
+    # assign colors
+    color_levels <- sort(unique(plot_dat$NumerLevel)) # levels to be assigned colors
+    cbp1_assigned <- switch((length(color_levels) <= length(cbp1)) + 1,  colorRampPalette(cbp1)(length(color_levels)), cbp1[1:length(color_levels)])
+    
+    for(v in sort(unique(plot_dat$RSS))) {
+      dat_df <- plot_dat %>%
+        dplyr::filter(RSS == v)
+      
+      p_points <-
+        ggplot(data = dat_df, aes(x = SurvDate, y = y_val, N = N, CI_low = CI_low, CI_high = CI_high)) +
+        labs(x = "Year", y = y_text) +
+        geom_point(aes(color = NumerLevel, text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>N: ", N, "<br>% Cover: ", y_val, "<br>CI low end: ", CI_low, "<br>CI high end: ", CI_high)), size = 2) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+        geom_errorbar(aes(ymin = CI_low, ymax = CI_high, color = NumerLevel), width = .45) +
+        geom_line(aes(color = NumerLevel), alpha = 0.3)
+      
+      if(PC_blackwhite) {
+        p_points <- p_points + scale_colour_grey()
+      } else {
+        p_points <- p_points +
+          scale_color_manual(limits = color_levels, values = cbp1_assigned, na.value = "black", drop = FALSE) # specifying all possible values in limits is required to make sure they are not dropped from legend when not in data
+      }
+ 
+      p_points_final <- FuncPlotEnd(p = p_points) +
+        facet_wrap(. ~ RSS, ncol = 1)
+      p_points_list[[v]] <- p_points_final
+    }
+  }
+  
+  # One_sub_many_loc
+  if (sel_splitplot == "one_sub_many_loc") {
+    # assign colors
+    color_levels <- sort(unique(plot_dat$RSS)) # levels to be assigned colors
+    cbp1_assigned <- switch((length(color_levels) <= length(cbp1)) + 1,  colorRampPalette(cbp1)(length(color_levels)), cbp1[1:length(color_levels)])
+    
+    for(v in sort(unique(plot_dat$NumerLevel))) {
+      dat_df <- plot_dat %>%
+        dplyr::filter(NumerLevel == v)
+      
+      p_points <-
+        ggplot(data = dat_df, aes(x = SurvDate, y = y_val)) +
+        labs(x = "Year", y = y_text) + 
+        geom_point(aes(color = RSS, text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>N: ", N, "<br>% Cover: ", y_val, "<br>CI low end: ", CI_low, "<br>CI high end: ", CI_high)), size = 2) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+        geom_errorbar(aes(ymin = CI_low, ymax = CI_high, color = RSS), width = .45) +
+        geom_line(aes(color = RSS), alpha = 0.3)
+        
+      
+      if(PC_blackwhite) {
+        p_points <- p_points + scale_colour_grey()
+      } else {
+        p_points <- p_points +
+          scale_color_manual(limits = color_levels, values = cbp1_assigned, na.value = "black", drop = FALSE) # specifying all possible values in limits is required to make sure they are not dropped from legend when not in data
+      }
+      
+      p_points_final <- FuncPlotEnd(p = p_points) +
+        facet_wrap(. ~ NumerLevel, ncol = 1)
+      p_points_list[[v]] <- p_points_final
+    }
+  }
+ 
+  return(p1_points_list)
+}
 ```
 
 ```{r action_button_import_new_data}
@@ -505,7 +641,7 @@ output$out_cover_plot <- plotly::renderPlotly({
   
   shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev), !is.null(input$sel_ncols))
   
-  # cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
+  cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
   
   cov_plot_dat <- rv_param_temp$dat_PC %>%
     dplyr::filter(DenomGroup == "TransectCount") %>% # percent cover of transect
@@ -542,7 +678,7 @@ if(input$sel_splitplot == "one_loc_one_sub") { # one plot per loc-sub
                      "one_loc_many_sub" = "~ RSS",
                      "one_sub_many_loc" = "~ NumerLevel")
   
-  default_title <- paste0("Mean % Cover per Transect (", input$sel_error, ")")
+  default_title <- paste0("% Cover (", input$sel_error, ")")
   plotly_PC2 <- plotly_PC +
     expand_limits(y = switch(is.null(input$PCy_max)+1, c(0, input$PCy_max, 0), 0)) +
     labs(x = "Year", y = paste0("Mean % Cover Per Transect (", input$sel_error, ")")) +
@@ -612,7 +748,7 @@ output$out_RC_plot <- plotly::renderPlotly({
     need(input$sel_lev!="Category", message = "Relative % cover is estimated only when the grouping level is 'Functional Group' or 'Taxon'")
   )
   
-  # cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
+  cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
   
   RC_plot_dat <- rv_param_temp$dat_PC %>%
     dplyr::filter(DenomGroup == "CategoryCount") %>% # relative % cover of category
