@@ -5,6 +5,7 @@
 ### LOAD PACKAGES ----
 # Look for packages on local machine, install if necessary, then load all
 pkgList_pre <- c("magrittr", 
+                 "data.table",
                  "plyr",
                  "lubridate",
                  "ggpubr", # to get legends
@@ -102,7 +103,7 @@ FuncBootDraws <- function(boot_dat, actual_dat, start_col, groups_df, combos_df,
     # For % cover, calculate per transect (RowID) and then take mean across all transects in the BootRep. The adjusted total count (denominator value) for any bootstrapped transect is the same as for the original data used to generate parametric bootstrap samples
     tmp2 <- tmp %>%
       dplyr::left_join(actual_dat[c("TransectSurveyID", "AdjTot")], by = "TransectSurveyID") %>%
-      dplyr::mutate(PercCov = GroupCount / AdjTot) %>%
+      dplyr::mutate(PercCov = 100*(GroupCount / AdjTot)) %>%
       dplyr::group_by(BootRep, Category, NumerLevel) %>% # grouping by Category just to keep the column in the output
       dplyr::summarize(EstimCov = mean(PercCov), .groups = "drop")
     
@@ -169,7 +170,7 @@ FuncBootDraws <- function(boot_dat, actual_dat, start_col, groups_df, combos_df,
     }
     
     out_df %<>%
-      dplyr::mutate_if(is.numeric, round, 3) %>%  # calculate quantiles and output in nice format
+      dplyr::mutate_if(is.numeric, round, 2) %>%  # calculate quantiles and output in nice format
       dplyr::mutate(N = n_transects) %>%
       dplyr::select(Category, NumerGroup, NumerLevel, DenomGroup, N, EstimCov, everything())
     
@@ -244,7 +245,7 @@ FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_d
     # For % cover, calculate per RowID and then take mean across all RowID in the BootRep. The adjusted total count (denominator value) for any bootstrapped transect is the same as for the original data used to generate parametric bootstrap samples
     tmp2 <- tmp %>%
       dplyr::left_join(actual_dat[c("TransectSurveyID", "AdjTot")], by = "TransectSurveyID") %>%
-      dplyr::mutate(PercCov = GroupCount / AdjTot) %>%
+      dplyr::mutate(PercCov = 100*(GroupCount / AdjTot)) %>%
       dplyr::group_by(BootRep, Category, NumerLevel) %>% # grouping by Category just to keep the column in the output
       dplyr::summarize(EstimCov = mean(PercCov), .groups = "drop")
     
@@ -310,7 +311,7 @@ FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_d
     }
     
     out_df %<>%
-      dplyr::mutate_if(is.numeric, round, 3) %>%  # calculate quantiles and output in nice format
+      dplyr::mutate_if(is.numeric, round, 2) %>%  # calculate quantiles and output in nice format
       dplyr::mutate(N = length(subsites)) %>%
       dplyr::select(Category, NumerGroup, NumerLevel, DenomGroup, N, EstimCov, everything())
     out_df$EstimCov[is.na(out_df$EstimCov)] <- 0
@@ -327,13 +328,13 @@ FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_d
 FuncCorals <- function(filenam, sitesfilenam = NULL, out_prefix) {
 
 # ### IMPORT AND FORMAT DATA ----
-coral <- read_csv(filenam)
-if(!is.null(sitesfilenam)) tbl_link <- read_csv(sitesfilenam)
+coral <- data.table::fread(filenam)
+if(!is.null(sitesfilenam)) tbl_link <- data.table::fread(sitesfilenam)
 
 # #  <<<<<<<< TESTING >>>>>>>>>>>>>> ----
-# coral <- read_csv("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- read_csv("Data_LOCAL_ONLY/demo_CoralDat.csv")
+# coral <- data.table::fread("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- data.table::fread("Data_LOCAL_ONLY/demo_CoralDat.csv")
 # out_prefix="test"
-# tbl_link <- read_csv("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
+# tbl_link <- data.table::fread("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
 
 # Format columns ----
 coral$Date <- lubridate::mdy(coral$Date)
@@ -491,10 +492,12 @@ bleach_combos_df <- tibble(
 ## SITE-LEVEL ESTIMATES ----
 
 # Site-level cover estimates ----
+cat(">>> Site-level cover estimates <<<")
 # First, work with taxon count data
 # For each transect-survey, generate parametric bootstrap samples (default is N = 1M) using the probabilities from the collected data. Run one site-survey at a time to avoid computer memory problems
 site_CIs_list <- apply(unique(boot_site_dat[c( "Site", "SurvDate")]), 1, FUN = function(x) {
- 
+  
+  cat(x[["Site"]], x[["SurvDate"]], "/n")
   subdat <- boot_site_dat %>%
     dplyr::filter(Site == x[["Site"]] & SurvDate == x[["SurvDate"]]) %>% # pull data for the specific site and survey date
     dplyr::select(where(~!all(is.na(.x)))) # get rid of cols with no data
@@ -518,6 +521,7 @@ site_CIs_df <- as.data.frame(do.call("rbind", site_CIs_list))
 site_CIs_df$SurvDate <- lubridate::ymd(site_CIs_df$SurvDate)
 
 # Site-level coral bleaching estimates ----
+cat(">>> Site-level coral bleaching estimates <<<")
 # Seems like most of the bleaching is in the Orbicella functional group. Within that, OFAV is the one least affected, there are 3 taxa highly affected. Raw data plots will show this.
 
 # Now work with coral bleach data
@@ -531,6 +535,8 @@ boot_bleach_dat <- boot_master_dat %>%
 
 # For each transect-survey, generate parametric bootstrap samples 
 site_bleach_CIs_list <- apply(unique(boot_bleach_dat[c("Site", "SurvDate")]), 1, FUN = function(x) {
+  
+  cat(x[["Site"]], x[["SurvDate"]], "/n")
   bleach_subdat <- boot_bleach_dat %>%
     dplyr::filter(Site == x[["Site"]] & SurvDate == x[["SurvDate"]]) %>% # pull data for the specific site and survey date
     dplyr::select(where(~!all(is.na(.x)))) # get rid of cols with no data
@@ -566,9 +572,11 @@ RS_estim_dates <- boot_master_dat %>%
   dplyr::select(-NumSub, -NumSubSurveyed)
 
 # Reporting site-level cover estimates ----
+cat(">>> Reporting site-level cover estimates <<<")
 # For each combination of reporting site and survey date
 RS_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate")]), 1, FUN = function(x) {
   
+  cat(x[["ReportingSite"]], x[["SurvDate"]], "/n")
   subsites <- RS_estim_dates %>% dplyr::filter(ReportingSite == x[["ReportingSite"]] & SurvDate == x[["SurvDate"]]) %>% dplyr::pull(Site) # these are the sites in that RS with that survey date
   RS_subdat <- boot_site_dat %>%
     dplyr::filter(Site %in% subsites & SurvDate == x[["SurvDate"]]) %>% # pull data for the specific site and survey date
@@ -596,8 +604,11 @@ RS_CIs_df <- as.data.frame(do.call("rbind", RS_CIs_list))
 RS_CIs_df$SurvDate <- lubridate::ymd(RS_CIs_df$SurvDate)
 
 # Reporting site-level coral bleaching estimates ----
+cat(">>> Reporting site-level coral bleaching estimates <<<")
 # For each reporting site-survey, generate parametric bootstrap samples 
 RS_bleach_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate")]), 1, FUN = function(x) {
+  
+  cat(x[["ReportingSite"]], x[["SurvDate"]], "/n")
   
   subsites <- RS_estim_dates %>% dplyr::filter(ReportingSite == x[["ReportingSite"]] & SurvDate == x[["SurvDate"]]) %>% dplyr::pull(Site) # these are the sites in that RS with that survey date
   
@@ -632,14 +643,14 @@ RS_bleach_CIs_df$SurvDate <- lubridate::ymd(RS_bleach_CIs_df$SurvDate)
 CoralPercCov <- site_CIs_df %>% 
   dplyr::filter(NumerGroup == "Category" & NumerLevel == "CORAL" & DenomGroup == "TransectCount") %>% 
   dplyr::select(Site, SurvDate, EstimCov) %>%
-  dplyr::mutate('%Coral' = round(EstimCov * 100),
-                '%NonCoral' = 100 - round(EstimCov * 100)) %>%
+  dplyr::mutate('%Coral' = EstimCov,
+                '%NonCoral' = 100 - EstimCov) %>%
   dplyr::select(-EstimCov)
 
 BleachRelCov <- site_bleach_CIs_df %>%
   dplyr::filter(NumerGroup == "BleachingCode" & DenomGroup == "CategoryCount") %>%
   dplyr::select(Site, SurvDate, NumerLevel, EstimCov) %>%
-  dplyr::mutate(EstimCov = round(EstimCov * 100)) %>%
+  # dplyr::mutate(EstimCov = round(EstimCov * 100)) %>%
   tidyr::spread(key = NumerLevel, value = EstimCov, fill = 0) %>%
   full_join(CoralPercCov, by = c("Site", "SurvDate"))
 
@@ -665,10 +676,24 @@ bleach_CIs_df <- rbind(
 ) %>%
   dplyr::select(SiteScale, ReportingSite, Site, RSS, IsActive, SurvDate, Purpose, N, everything())
 
+# Calculate % cover by category for each transect
+transect_counts_df <- boot_master_dat %>%
+  tidyr::expand(TransectSurveyID, Category) %>%
+  left_join(boot_master_dat[c("TransectSurveyID", "Category", "CountOfTaxon")], by = c("TransectSurveyID", "Category")) %>%
+  dplyr::mutate(CountOfTaxon = replace_na(CountOfTaxon, 0)) %>%
+  group_by(TransectSurveyID) %>%
+  dplyr::mutate(AdjTot = sum(CountOfTaxon)) %>%
+  group_by(TransectSurveyID, Category) %>%
+  dplyr::mutate(TransectCount = sum(CountOfTaxon),
+                PercCov = round(100*(TransectCount/AdjTot), 1)) %>%
+  dplyr::select(-CountOfTaxon) %>%
+  dplyr::distinct()
+
 out_list <- list(raw_dat = coral, # the raw data include equipment and shadow counts; only annual and episodic surveys included
                  map_dat = mapdat2,
                  groups_df = grps_df,
                  warn_list = warn_list,
+                 transect_counts_df = transect_counts_df,
                  cover_CIs_df = cover_CIs_df,
                  bleach_CIs_df = bleach_CIs_df)
 saveRDS(out_list, paste0(out_prefix, "_coralsummary.RDS"))

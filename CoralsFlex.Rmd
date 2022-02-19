@@ -5,6 +5,7 @@ output:
     vertical_layout: scroll
     orientation: columns
     theme: sandstone   # theme options: default, cosmo, bootstrap, cerulean, journal, flatly, readable, spacelab, united, lumen, paper, sandstone, simplex, yeti
+    css: custom_styles.css
 runtime: shiny
 ---
 
@@ -23,20 +24,136 @@ lapply(pkgList, library, character.only = TRUE)
 options(shiny.maxRequestSize = 20*1024^2) # allows data files up to 20 MB to be imported
 source("Corals.R")
 
-rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list = NULL, cover_CIs_df = NULL, bleach_CIs_df = NULL)
+rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list = NULL, transect_counts_df = NULL, cover_CIs_df = NULL, bleach_CIs_df = NULL)
 
-rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_sublev = NULL, shared_legends)
+rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, transects_subdat = data.frame(), bleach_subdat = data.frame())
 
+### Load test data <<<<< THIS IS JUST FOR TESTING
+  rv <- readRDS("~/NPS PROJECTS_CURRENT/Dash_SFCN corals/temp_coralsummary.RDS")
 ```
 
 ```{r functions}
+# FuncPlotlyHeatMap <- function(dat, y_name, facet_by_name, legend_name, is_discrete = FALSE) {
+#   # Function to create plotly heatmaps
+#   #
+#   # Args:
+#   #   dat: Data frame with these columns: SurvDate (for x-axis), Y, FillCol, HoverLabel. 'X' should be factor class
+#   #   y_name, legend_name: Axis labels and legend titles
+#   #   is_discrete: TRUE if legend should be discrete (for counts), not continuous
+#   #   
+#   # Returns:
+#   #   Legend and heat map
+#   #
+#   
+#   # Fill missing values
+#   template <- dat %>%
+#     expand(SurvDate, Y) %>%
+#     left_join(dat[c("Y", "SurvDate", "FillCol", "HoverLabel")], by = c("Y", "SurvDate")) %>%
+#     dplyr::mutate(Y = factor(Y, levels = sort(unique(Y)))) %>%
+#     dplyr::arrange(Y, SurvDate)
+#     
+#   
+#   # Calculate total and relative heights
+#   total_page_ht <- length(levels(dat$Y))+55
+#  
+#   # Create color scale
+#   min_colorval <- min(template$FillCol, na.rm = TRUE)
+#   max_colorval <- max(template$FillCol, na.rm = TRUE) 
+#   template_cols <- viridis(n = max_colorval - min_colorval + 1, alpha = 1, begin = 0, end = 1, direction = -1)
+#   
+#   # Create separate legend - hacky legend because plotly heatmaps can't generate horizontal colorbars
+#   shared_legend <- grid.arrange(ggpubr::as_ggplot(
+#     get_legend(
+#       ggplot(template, aes(x = SurvDate, y = Y, fill = FillCol)) +
+#         geom_tile() +
+#         scale_fill_viridis_c(name = legend_name, direction=-1, begin = 0, end = 1) +
+#         theme(legend.position = "top",
+#               legend.key.width = unit(2, "cm"),
+#               legend.text = element_text(size = 16, margin = margin(r = 2, unit = "cm")),
+#               legend.title = element_text(size = 16)
+#         )
+#       )
+#     )
+#   )
+#   
+#   mat_values <- matrix(pull(template, FillCol),
+#                        nrow=length(levels(template$Y)),
+#                        byrow = TRUE,
+#                        dimnames = list(
+#                          levels(template$Y),
+#                          sort(unique(SurvDate))
+#                          )
+#                        )
+#   mat_hover <- matrix(pull(template, HoverLabel),
+#                       nrow=length(levels(template$Y)),
+#                        byrow = TRUE)
+#   shiny::req(!is.null(template), !is.null(mat_values), !is.null(mat_hover))
+#   
+#   # Create heatmap <<<<<<<<<<<<<<<<<< PICK UP FROM HERE
+#     # none of the margin arguments are helpful
+#     if(sum(!is.na(template$FillCol)) > 0) {
+#       heat_subplot <- heatmaply(
+#         mat_values,
+#         column_text_angle = 0,
+#         grid_gap = 1,
+#         colors = template_cols,
+#         limits = c(min_colorval, max_colorval),
+#         dendrogram = "none",
+#         # main = paste0("# of Survey Events, by Year and ", y_name, " for each ", facet_by_name),
+#         subplot_margin = 15,
+#         margins = c(15, 15, 15, 15),
+#         ylab = y_name,
+#         xlab = rv_param_temp$seasonType,
+#         xaxis_font_size = "22pt",
+#         yaxis_font_size = "22pt",
+#         height = total_page_ht,
+#         hide_colorbar = TRUE,
+#         custom_hovertext = mat_hover,
+#         key.title = "# of Survey Events",
+#         plot_method = "plotly") %>%
+#         add_annotations( # add plot subtitle
+#           text = paste0(facet_by_name, ":  ", i),
+#           xref = "paper",
+#           yref = "paper",
+#           x = -0.02,
+#           y = 1,
+#           xanchor = "left",
+#           yanchor = "bottom", # y anchor uses 'middle', x anchor uses 'center'
+#           showarrow = FALSE,
+#           font=list(size=16, family = "Arial")
+#         ) 
+#       }
+#     }) %>% purrr::discard(is.null) # remove null list elements
+#   shiny::req(!is.null(heatplot_list))
+#   # Format heatmap page
+#   plotly_heatmap <-
+#      plotly::subplot(
+#       heatplot_list,
+#       nrows = length(heatplot_list),
+#       shareX = TRUE, # if set to FALSE, x-axis labels will overlap subplot title
+#       shareY = FALSE,
+#       titleX = TRUE,
+#       titleY = FALSE,
+#       heights = rep(1/length(heatplot_list), length(heatplot_list)),
+#       which_layout = 1
+#     ) %>%
+#       layout(
+#           margin = list(
+#           t=45,
+#           b=15,
+#           l= 80,
+#           r=40)
+#           )
+#   return_list <- list(legend = shared_legend, plot = plotly_heatmap)
+#   return(return_list)
+# }
 
-FuncPlotPointCI <- function(dat = rv_param_temp$dat_PC, denom = "TransectCount", sel_error = "90%CI", sel_splitplot = input$sel_splitplot, PCy_max = input$PCy_max, y_text = paste0("% Cover (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite) {
+FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, PCy_max, y_text, PC_blackwhite) {
   # Function to generate point plots with error bars
   #
   # Args:
   #   CI_dat:  The CI data frame
-  #   denom: "TransectCount" for % cover or "CategoryCount" for relative % cover
+  #   denom: "TransectCount" for % cover or "CategoryCount" for relative cover
   #   combine_stations:  TRUE to combine multiple stations in a single plot of a characteristic
   #   fixed_free_y:  Are scales fixed or free across all plots?
   #
@@ -51,118 +168,89 @@ FuncPlotPointCI <- function(dat = rv_param_temp$dat_PC, denom = "TransectCount",
   plot_dat <- dat %>%
     dplyr::filter(DenomGroup == denom) %>% 
     dplyr::rename(
-      y_val = EstimCov,
       CI_low = contains(paste0(sel_error, "_low")),
       CI_high = contains(paste0(sel_error, "_high")))
   
-  # All plots share a single x-axis
-  xaxes_min = min(plot_dat$SurvDate, na.rm = TRUE)
-  xaxes_max = max(plot_dat$SurvDate, na.rm = TRUE)
-  
-  # Plot-end function
-  FuncPlotEnd <- function(p) {
-    p_final <- p + 
-      scale_x_date(date_breaks = "1 year", date_labels = "%Y", breaks = scales::pretty_breaks(), limits = c(xaxes_min, xaxes_max)) +
-      scale_y_continuous(breaks = pretty_breaks()) +
-      expand_limits(y = switch(is.null(PCy_max)+1, c(0, PCy_max, 0), 0)) +
-      theme_bw(base_size = 12) +
-      theme(strip.text = element_text(size = 12, face = "bold"),
-            strip.text.y = element_blank(), 
-            legend.title = element_blank(),
-            legend.position = "top") 
+  if(sel_splitplot == "one_loc_one_sub") { # one plot per loc-sub
+    p <- 
+      ggplot(data = plot_dat, aes(x = SurvDate, y = EstimCov), colour = "black")
+  } else { # multiple colors in one plot
     
-    return(p_final)
-  }
-  
-  # Create the plot(s)
-  p_points_list <- list()
-  
-  # One_loc_one_sub
-  if(sel_splitplot == "one_loc_one_sub") {
-    unique_df <- plot_dat %>%
-      dplyr::select(RSS, NumerLevel) %>% 
-      dplyr::distinct() %>%
-      arrange(RSS, NumerLevel)
+    # assign colors
+    color_levels <- switch((sel_splitplot == "one_loc_many_sub")+1,  sort(unique(plot_dat$RSS)), sort(unique(plot_dat$NumerLevel))) # levels to be assigned colors
+    cbp1_assigned <- switch((length(color_levels) <= length(cbp1)) + 1,  colorRampPalette(cbp1)(length(color_levels)), cbp1[1:length(color_levels)])
+   
+    p <- 
+      ggplot(data = plot_dat, aes_string(x = "SurvDate", y = "EstimCov", colour = ifelse(sel_splitplot == "one_loc_many_sub", "NumerLevel", "RSS"))) 
     
-    for (v in 1:nrow(unique_df)) { # for each loc-sub
-      dat_df <- plot_dat %>%
-        dplyr::filter(RSS == unique_df$RSS[v] & NumerLevel == unique_df$NumerLevel[v])
-      
-      p_points <- 
-        ggplot(data = dat_df, aes(x = SurvDate, y = y_val, N = N, CI_low = CI_low, CI_high = CI_high)) +
-        labs(x = "Year", y = y_text) +
-        geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>N: ", N, "<br>% Cover: ", y_val, "<br>CI low end: ", CI_low, "<br>CI high end: ", CI_high)), size = 2) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
-        geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = .45) +
-        geom_line(alpha = 0.3)
-      
-      p_points_final <- FuncPlotEnd(p = p_points) +
-        facet_wrap(RSS ~ NumerLevel, labeller = label_wrap_gen(multi_line=FALSE), ncol = 1)
-      p_points_list[[v]] <- p_points_final
+    if(PC_blackwhite) {
+      p <- p + scale_colour_grey()
+    } else {
+      p <- p +
+        scale_color_manual(values = cbp1_assigned)
     }
   }
+  
+  p <- p +
+    geom_point(aes(text = paste0("Reporting Site: ", RSS, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br># of Samples: ", N, "<br>% Cover: ", EstimCov, "<br>Lower CI: ", CI_low, "<br>Upper CI: ", CI_high))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+    geom_line() +
+    geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = .25)
+  
+  facet_vars <- switch(sel_splitplot,
+                       "one_loc_one_sub" = "~ RSS + NumerLevel",
+                       "one_loc_many_sub" = "~ RSS",
+                       "one_sub_many_loc" = "~ NumerLevel")
+  
+  p <- p +
+    expand_limits(y = switch(is.null(PCy_max)+1, c(0, PCy_max, 0), 0)) +
+    labs(x = "Year", y = y_text) +
+    scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
+    facet_wrap(as.formula(facet_vars), scales = "free_y", ncol = 1) +
+    theme_bw(base_size = 12) +
+    theme(legend.title = element_blank())
+  
+  facet_ht <- 215
+  add_on_ht <- 180 # this is for legend
+  page_ht <- switch(sel_splitplot,
+                    "one_loc_one_sub" = length(rv_param_temp$sel_sublev) * length(rv_param_temp$sel_showRSS) * facet_ht + add_on_ht,
+                    "one_loc_many_sub" = length(rv_param_temp$sel_showRSS) * facet_ht + add_on_ht,
+                    "one_sub_many_loc" = length(rv_param_temp$sel_sublev) * facet_ht + add_on_ht)
 
-  # One_loc_many_sub
-  if (sel_splitplot == "one_loc_many_sub") {
-    # assign colors
-    color_levels <- sort(unique(plot_dat$NumerLevel)) # levels to be assigned colors
-    cbp1_assigned <- switch((length(color_levels) <= length(cbp1)) + 1,  colorRampPalette(cbp1)(length(color_levels)), cbp1[1:length(color_levels)])
-    
-    for(v in sort(unique(plot_dat$RSS))) {
-      dat_df <- plot_dat %>%
-        dplyr::filter(RSS == v)
-      
-      p_points <-
-        ggplot(data = dat_df, aes(x = SurvDate, y = y_val, N = N, CI_low = CI_low, CI_high = CI_high)) +
-        labs(x = "Year", y = y_text) +
-        geom_point(aes(color = NumerLevel, text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>N: ", N, "<br>% Cover: ", y_val, "<br>CI low end: ", CI_low, "<br>CI high end: ", CI_high)), size = 2) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
-        geom_errorbar(aes(ymin = CI_low, ymax = CI_high, color = NumerLevel), width = .45) +
-        geom_line(aes(color = NumerLevel), alpha = 0.3)
-      
-      if(PC_blackwhite) {
-        p_points <- p_points + scale_colour_grey()
-      } else {
-        p_points <- p_points +
-          scale_color_manual(limits = color_levels, values = cbp1_assigned, na.value = "black", drop = FALSE) # specifying all possible values in limits is required to make sure they are not dropped from legend when not in data
-      }
- 
-      p_points_final <- FuncPlotEnd(p = p_points) +
-        facet_wrap(. ~ RSS, ncol = 1)
-      p_points_list[[v]] <- p_points_final
-    }
-  }
+  gp <- ggplotly(p,
+                 height = page_ht) # specify the total plot height here because this layout will be applied to the entire page
   
-  # One_sub_many_loc
-  if (sel_splitplot == "one_sub_many_loc") {
-    # assign colors
-    color_levels <- sort(unique(plot_dat$RSS)) # levels to be assigned colors
-    cbp1_assigned <- switch((length(color_levels) <= length(cbp1)) + 1,  colorRampPalette(cbp1)(length(color_levels)), cbp1[1:length(color_levels)])
-    
-    for(v in sort(unique(plot_dat$NumerLevel))) {
-      dat_df <- plot_dat %>%
-        dplyr::filter(NumerLevel == v)
-      
-      p_points <-
-        ggplot(data = dat_df, aes(x = SurvDate, y = y_val)) +
-        labs(x = "Year", y = y_text) + 
-        geom_point(aes(color = RSS, text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>N: ", N, "<br>% Cover: ", y_val, "<br>CI low end: ", CI_low, "<br>CI high end: ", CI_high)), size = 2) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
-        geom_errorbar(aes(ymin = CI_low, ymax = CI_high, color = RSS), width = .45) +
-        geom_line(aes(color = RSS), alpha = 0.3)
-        
-      
-      if(PC_blackwhite) {
-        p_points <- p_points + scale_colour_grey()
-      } else {
-        p_points <- p_points +
-          scale_color_manual(limits = color_levels, values = cbp1_assigned, na.value = "black", drop = FALSE) # specifying all possible values in limits is required to make sure they are not dropped from legend when not in data
-      }
-      
-      p_points_final <- FuncPlotEnd(p = p_points) +
-        facet_wrap(. ~ NumerLevel, ncol = 1)
-      p_points_list[[v]] <- p_points_final
-    }
-  }
- 
-  return(p1_points_list)
+  gp <- gp %>% layout(
+    legend = list(orientation = "h", xanchor = "center", yanchor = "bottom", y = 1.03, x = 0.5),
+    margin = list(
+      t=120,
+      b=70,
+      l= 100,
+      r=15))
+  
+  gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.12 # move y-axis title more to the left
+  gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.02 # move x-axis title down more. This affects the x-axis title specified in ggplot
+  
+  return(gp)
+}
+
+FuncPlotBleach <- function(dat) {
+  ggplot(dat, aes(x = SurvDate, y = EstimCov, fill = NumerLevel)) +
+    geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
+    scale_fill_manual(values = c("NoData" = "yellow", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    labs(y = "% Cover of Site", subtitle = "For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)") +
+    theme_bw(base_size = 12) +
+    facet_grid(. ~ Year, scales = "free_x", switch = "x") +
+    theme(legend.title = element_blank(),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+          strip.text.x = element_text(size = 11),
+          strip.background=element_blank(),
+          panel.border = element_blank(),
+          panel.grid = element_blank(),
+          panel.spacing = unit(-0.05, "lines"))
 }
 ```
 
@@ -179,7 +267,7 @@ observeEvent(eventExpr = input$button_import, {
   withProgress(message = "Please be patient. Calculating something wonderful...", value = 0, {
     FuncCorals(filenam = input$filenam$datapath, sitesfilenam = input$sitesfilenam$datapath, out_prefix = input$out_prefix)
     
-    rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_sublev = NULL)
+    rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, transects_subdat = data.frame(), bleach_subdat = data.frame())
     
      showModal(modalDialog(
         title = "Done",
@@ -196,8 +284,8 @@ observeEvent(eventExpr = input$summaryfile, {
  
   rv <- sapply(names(out), FUN = function(i) {rv[[i]] <- out[[i]]}, simplify = FALSE)
   
-  rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_sublev = NULL)
-  
+  rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, transects_subdat = data.frame(), bleach_subdat = data.frame())
+
   Sys.sleep(0.25)
   
   showModal(modalDialog(
@@ -252,11 +340,12 @@ observeEvent(eventExpr = input$button_export_PC, {
 # Action to update cover summaries with current user inputs
 observeEvent(eventExpr = input$button_update_cover, {
 
-  shiny::req(!is.null(rv$cover_CIs_df), !is.null(input$sel_lev), !is.null(input$sel_sitescale), !is.null(input$sel_sublev), !is.null(input$sel_showRSS), !is.null(input$sel_episodic), !is.null(input$sel_splitplot))
+  shiny::req(!is.null(rv$cover_CIs_df), !is.null(input$sel_lev), !is.null(input$sel_sitescale), !is.null(input$sel_showRSS), !is.null(input$sel_episodic), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(input$sel_splitplot))
+  
+  if(input$sel_lev != "Category") {shiny::validate(need(!is.null(input$sel_sublev), message = "Please select at least one sublevel, then press the green 'UPDATE COVER SUMMARIES' button"))}
  
   dat_PC <- rv$cover_CIs_df %>%
     dplyr::filter(
-      SiteScale == input$sel_sitescale,
       RSS %in% input$sel_showRSS,
       NumerGroup == input$sel_lev,
       NumerLevel %in% input$sel_sublev
@@ -268,10 +357,8 @@ observeEvent(eventExpr = input$button_update_cover, {
   
   rv_param_temp$dat_PC <- dat_PC
   rv_param_temp$sel_showRSS <- input$sel_showRSS # make sure user selection doesn't automatically update plot page height
+  rv_param_temp$sel_lev <- input$sel_lev
   rv_param_temp$sel_sublev <- input$sel_sublev
-  
-  saveRDS(isolate(reactiveValuesToList(input)), "temp_input.RDS")
-saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS") # <<<<<<<<<<<<<<<<<<<<
 
   shinyjs::hideElement("wp_cover_criteria")
 })
@@ -445,45 +532,172 @@ renderTable({
 br()
 ```
 
-Raw Data
+% Cover per Transect
 ======================================  
-Inputs {.sidebar data-width=275}
+Inputs {.sidebar data-width=300}
 -------------------------------------
-```{r input_raw}
+```{r input_raw_filter}
+br()
+
+h4("Data Filter Options")
+
+wellPanel(
+  id = "wp_raw_criteria",
+
+  # Pre-filter data
+  checkboxInput("raw_RSS_active", label = "Only use active sites", value = FALSE), #NOTE: Don't need switch() function to keep inputs from changing on these
+  checkboxInput("sel_raw_episodic", label = "Include episodic survey data", value = TRUE),
+  
+  # Select spatial scale--sites or reporting sites
+  renderUI({
+    radioButtons("sel_raw_sitescale", 
+             label = "Show data for this spatial scale:", 
+             choiceNames = list("Reporting Site", "Site"),
+             choiceValues = list("ReportingSite", "Site"),
+             selected = switch(is.null(input$sel_raw_sitescale)+1, input$sel_raw_sitescale, "Site"),
+             inline = TRUE)
+    }),
+  
+  tags$div(renderText({
+    shiny::req(!is.null(input$sel_raw_sitescale))
+    if(input$sel_raw_sitescale == "ReportingSite") {
+      paste0("NOTE: Summaries by Reporting Site are limited to survey events for which data are available for all included Sites")  # Explain how reporting sites are summarized
+      }
+    }), style = "font-size:14px; color:red; font-weight:bold;"),
+
+  renderUI({
+    shiny::req(!is.null(rv$map_dat), !is.null(input$sel_raw_sitescale), !is.null(input$raw_RSS_active))
+    
+    raw_RSS_choices <- rv$map_dat %>%
+      dplyr::filter(if(input$raw_RSS_active == TRUE) IsActive == 1 else TRUE) %>%
+      {if(input$sel_raw_sitescale == "Site") dplyr::select(., Site) else dplyr::select(., ReportingSite)} %>%
+      dplyr::distinct() %>%
+      pull() %>%
+      as.character()
+    
+    shiny::req(!is.null(raw_RSS_choices))
+    
+    # Select (reporting) site
+    selectInput("sel_raw_showRSS", 
+                       label = paste0("Show results for this ", ifelse(input$sel_raw_sitescale == "ReportingSite", "reporting site", "site")),
+                       choices = raw_RSS_choices, 
+                       selected = switch(is.null(input$sel_raw_showRSS)+1, input$sel_raw_showRSS, raw_RSS_choices[1]))
+    }),
+
+  renderUI({
+    shiny::req(!is.null(rv$raw_dat))
+    
+    selectInput("sel_raw_categ",
+                label = paste0("Show transect counts for this category"),
+                choices = sort(unique(rv$raw_dat$Category)),
+                selected = switch(is.null(input$sel_raw_categ)+1, input$sel_raw_categ, "CORAL"))
+    }),
+  
+  renderUI({
+    shiny::req(!is.null(rv$raw_dat), !is.null(input$sel_raw_sitescale), !is.null(input$sel_raw_showRSS), !is.null(input$sel_raw_categ), !is.null(input$sel_raw_episodic))
+    
+    date_opts <- rv$raw_dat %>%
+      dplyr::mutate(RSS = get(input$sel_raw_sitescale)) %>%
+      dplyr::filter(
+        RSS == input$sel_raw_showRSS,
+        Category == input$sel_raw_categ,
+        if(input$sel_raw_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
+      dplyr::pull(SurvDate) %>%
+      as.character()
+    
+    sliderTextInput("sel_raw_dates",
+                label = "Compare % cover for two survey events (red lines on plots)",
+                choices = date_opts,
+                selected = c(min(date_opts, na.rm = TRUE), max(date_opts, na.rm = TRUE))
+    )
+  })
+
+) # end of 'wp_raw_criteria'
 ```
 
-Raw Data Plots
+% Cover per Transect
 -------------------------------------
-### Data by Transects
 
-Raw Data Table
--------------------------------------
-### Data Table
+<h3>% Cover per Transect</h3>
 
-Cover Estimates
+###
+
+```{r plot_transects}
+
+output$out_transects_plot <- plotly::renderPlotly({
+  shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+
+    shiny::req(!is.null(rv$raw_dat), !is.null(input$sel_raw_episodic), !is.null(input$sel_raw_showRSS), !is.null(input$sel_raw_sitescale), !is.null(input$sel_raw_categ), !is.null(rv$transect_counts_df), !is.null(input$sel_raw_dates))
+
+  # Data to display in plots and table
+  rv_param_temp$transects_subdat <- rv$raw_dat %>%
+    dplyr::select(-Subcategory, -FunctionalGroup, -Taxon, -BleachingCode, -CountOfTaxon) %>%
+    dplyr::mutate(RSS = get(input$sel_raw_sitescale),
+                  Site_Transect = paste(Site, Transect, sep = "_")) %>%
+    dplyr::filter(
+      RSS == input$sel_raw_showRSS,
+      Category == input$sel_raw_categ,
+      if(input$sel_raw_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
+    dplyr::distinct() %>%
+    dplyr::left_join(rv$transect_counts_df, by = c("TransectSurveyID", "Category"))
+  
+  p <- ggplot(rv_param_temp$transects_subdat, aes(x = SurvDate, y = PercCov)) +
+    geom_point() +
+    geom_line() +
+    geom_vline(xintercept = as.numeric(as.Date(input$sel_raw_dates)), color = "red") +
+    theme_bw() +
+    facet_wrap(vars(Site_Transect))
+  ggplotly(p)
+  })
+
+tags$style("#out_transects_plot{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+plotlyOutput('out_transects_plot', height="100%", width = "100%")
+```
+
+### 
+
+```{r}
+output$out_compare_tab <- DT::renderDT({
+  shiny::req(!is.null(rv_param_temp$transects_subdat), !is.null(input$sel_raw_dates))
+  
+  compare_dat <- rv_param_temp$transects_subdat %>%
+    dplyr::select(ReportingSite, Site, Transect, SurvDate, PercCov) %>%
+    dplyr::mutate(SurvDate = as.character(SurvDate)) %>%
+  dplyr::filter(SurvDate %in% input$sel_raw_dates)  %>%
+  tidyr::pivot_wider(names_from = SurvDate, values_from = PercCov, names_prefix = "%Cover on ")
+  compare_dat$`Change in %Cover` = compare_dat[5] - compare_dat[4]
+  
+  DT::datatable(
+    compare_dat,
+    class="compact stripe",
+    rownames= FALSE,
+    options = list(
+      pageLength = 20,
+      autoWidth = TRUE,
+      dom = 'Bfrtip',
+      buttons = c('copy', 'csv', 'excel', 'pdf'),
+      columnDefs = list(list(className = 'dt_center', targets = "_all"))
+      )
+  )
+})
+
+dataTableOutput("out_compare_tab")
+tags$style("#out_compare_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+```
+
+% Cover & Relative Cover per Site
 ======================================  
-Inputs {.sidebar data-width=275}
+Inputs {.sidebar data-width=300}
 -------------------------------------
 ```{r input_cover_filter}
 br()
 
-strong("Data Filter Options")
+h4("Data Filter Options")
 
 # shinyjs::hidden( # initially hide this well panel
 wellPanel(
   id = "wp_cover_criteria",
-  
-  actionButton("button_update_cover", "Update Cover Summaries", style="background-color:#66CD00; color:black;", width = "95%"),
-  
-  br(),
 
-    # tags$div(renderText({ 
-    #   shiny::req(!is.null(input$sel_error))
-    #   if(input$sel_error == "SE") {
-    #     paste0("WARNING!! SE is valid for % cover only if individual transect data are approximately normally distributed. SE error bars that extend below zero are one indication that SE calculations are not appropriate for your data.")  # Post a warning about using SE
-    #     }
-    #   }), style = "font-size:14px; color:red; font-weight:bold;"),
-  
   # Pre-filter data
   checkboxInput("RSS_active", label = "Only use active sites", value = FALSE), #NOTE: Don't need switch() function to keep inputs from changing on these
   checkboxInput("sel_episodic", label = "Include episodic survey data", value = TRUE),
@@ -551,7 +765,7 @@ wellPanel(
     
     rv_param_temp$avail_sublevs <- rv$cover_CIs_df %>%
       dplyr::filter(
-        SiteScale == input$sel_sitescale,
+        # SiteScale == input$sel_sitescale,
         RSS %in% input$sel_showRSS,
       NumerGroup == input$sel_lev) %>%
       dplyr::filter(if(input$sel_lev != "Category" & !is.null(input$sel_categ)) Category == input$sel_categ else TRUE) %>%
@@ -581,14 +795,20 @@ wellPanel(
   br(),
   
   br(),
+    
+  actionButton("button_update_cover", "UPDATE COVER SUMMARIES", class = "green-action-button"),
   
-  actionButton("button_export_PC", "Click to Export Plot Data", width = "95%")
+  br(),
+  
+  br(),
+  
+  actionButton("button_export_PC", "Export Plot Data", class = "blue-action-button")
 ) # end of 'wp_cover_criteria'
 ```
  
 ```{r input_cover_format}
 
-strong("Figure Format Options")
+h4("Figure Format Options (plots update immediately)")
 
 br()
 
@@ -608,235 +828,182 @@ renderUI({
 })
 
 renderUI({
-  numericInput("sel_ncols",
-             label = "Arrange plots in how many columns?",
-             value = switch(is.null(input$sel_ncols)+1, input$sel_ncols, 1),
-             min = 1,
-             max = 3,
-             step = 1)
-})
-
-renderUI({
   checkboxInput("PC_blackwhite", label = "Plot in grayscale (can only handle up to 6 categories)", value = switch(is.null(input$PC_blackwhite)+1, input$PC_blackwhite, FALSE))
 })
 
 renderUI({
   numericInput("PCy_max", label = "Set y-axis maximum", min = 5, max = 105, step = 5, value = switch(is.null(input$PCy_max)+1, input$PCy_max, NULL))
 })
-
-# numericInput("PCy_int", label = "Increment for y-axis ticks", min = 5, max = 100, step = 5, value = 10)
-
-textInput("PCplot_title", "Enter text to use for plot title", value = "")
 ```
 
-% Cover {.tabset .tabset-fade}
+% Cover & Relative Cover per Site
 -------------------------------------
-### % Cover Plots
 
+<div class="flex-container">
+  <div class="flex-left">
+
+<center><h3>% Cover per Site</h3></center>
+<br>
 ```{r plot_PC}
 output$out_cover_plot <- plotly::renderPlotly({
-  
   shiny::validate(
-    need(!is.null(rv_param_temp$dat_PC), message = "From 'Data Filter Options' on the left, please select filter criteria then press the green 'UPDATE COVER SUMMARIES' button"))
+    need(!is.null(rv_param_temp$dat_PC), message = "From 'Data Filter Options' on the left, please select a grouping level and sublevel(s), then press the green 'UPDATE COVER SUMMARIES' button"))
   
-  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev), !is.null(input$sel_ncols))
-  
-  cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
-  
-  cov_plot_dat <- rv_param_temp$dat_PC %>%
-    dplyr::filter(DenomGroup == "TransectCount") %>% # percent cover of transect
-    dplyr::rename(CI_low = contains(paste0(input$sel_error, "_low")),
-                  CI_high = contains(paste0(input$sel_error, "_high")))
-  
-if(input$sel_splitplot == "one_loc_one_sub") { # one plot per loc-sub
-  plotly_PC <- 
-    ggplot(data = cov_plot_dat, aes(x = SurvDate, y = EstimCov, N = N, CI_low = CI_low, CI_high = CI_high), colour = "black")
-  } else { # multiple colors in one plot
-    
-    # assign colors
-    color_levels <- switch((input$sel_splitplot == "one_loc_many_sub")+1,  sort(unique(cov_plot_dat$RSS)), sort(unique(cov_plot_dat$NumerLevel))) # levels to be assigned colors
-    cbp1_assigned <- switch((length(color_levels) <= length(cbp1)) + 1,  colorRampPalette(cbp1)(length(color_levels)), cbp1[1:length(color_levels)])
-  
-    plotly_PC <- 
-      ggplot(data = cov_plot_dat, aes_string(x = "SurvDate", y = "EstimCov", colour = ifelse(input$sel_splitplot == "one_loc_many_sub", "NumerLevel", "RSS"), N = "N", CI_low = "CI_low", CI_high = "CI_high")) # additional aes arguments (e.g., CI_low) are for hover text
-  
-  if(input$PC_blackwhite) {
-    plotly_PC <- plotly_PC + scale_colour_grey()
-  } else {
-    plotly_PC <- plotly_PC +
-      scale_color_manual(values = cbp1_assigned)
-  }
-}
-  
-  plotly_PC <- plotly_PC +
-    geom_point() +
-    geom_line() +
-    geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = .25)
-  
-  facet_vars <- switch(input$sel_splitplot,
-                     "one_loc_one_sub" = "~ RSS + NumerLevel",
-                     "one_loc_many_sub" = "~ RSS",
-                     "one_sub_many_loc" = "~ NumerLevel")
-  
-  default_title <- paste0("% Cover (", input$sel_error, ")")
-  plotly_PC2 <- plotly_PC +
-    expand_limits(y = switch(is.null(input$PCy_max)+1, c(0, input$PCy_max, 0), 0)) +
-    labs(x = "Year", y = paste0("Mean % Cover Per Transect (", input$sel_error, ")")) +
-    scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
-    facet_wrap(as.formula(facet_vars), scales = "free_y", ncol = input$sel_ncols) +
-    theme_bw(base_size = 12) +
-    theme(legend.title = element_blank())
-#,panel.spacing = unit(2, "lines"))
-  
-  facet_ht <- 260
-  add_on_ht <- 180 # this is for title and subtitle
-  page_ht <- switch(input$sel_splitplot,
-                     "one_loc_one_sub" = ceiling(length(rv_param_temp$sel_sublev) * length(rv_param_temp$sel_showRSS)/input$sel_ncols) * facet_ht + add_on_ht,
-                     "one_loc_many_sub" = ceiling(length(rv_param_temp$sel_showRSS)/input$sel_ncols) * facet_ht + add_on_ht,
-                     "one_sub_many_loc" = ceiling(length(rv_param_temp$sel_sublev)/input$sel_ncols) * facet_ht + add_on_ht
-  )
+  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev))
 
-  gp <- ggplotly(plotly_PC2,
-                   height = page_ht,
-                   tooltip = c("RSS", "SurvDate", "N", "y_val", "y_low", "y_high")) # specify the total plot height here because this layout will be applied to the entire page
+FuncPlotPointCI(dat = rv_param_temp$dat_PC, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, PCy_max = input$PCy_max, y_text = paste0("Mean % Cover Per Transect (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite)
   
-#   # Code to fix the duplicate legend entry problem that occurs when ggplotly is used on faceted ggplot with a scale_colour... or scale_fill... argument
-#   for (i in seq_along(gp$x$data)) {
-#   # Is the layer the first entry of the group?
-#   is_first <- grepl("^\\(.*?,1\\)", gp$x$data[[i]]$name)
-#   # Extract the group identifier and assign it to the name and legendgroup arguments
-#   gp$x$data[[i]]$name <- gsub("^\\((.*?),\\d+\\)", "\\1", gp$x$data[[i]]$name)
-#   gp$x$data[[i]]$legendgroup <- gp$x$data[[i]]$name
-#   # Show the legend only for the first layer of the group 
-#   if (!is_first) gp$x$data[[i]]$showlegend <- FALSE
-# }
-  
-  gp <- gp %>% layout(
-    title = list( # axis and other plot titles from ggplot get lost in ggplotly, so specify it here
-      text = paste(switch((nchar(input$PCplot_title)==0)+1, input$PCplot_title, default_title), "<br>", "<sup>", "(X-axis tick marks Jan. 1 of each year)", "</sup>"),
-      xanchor = "center", yanchor = "bottom", x = 0.55, y = 0.96),
-    legend = list(orientation = "h", xanchor = "center", yanchor = "bottom", y = 1.02, x = 0.5),
-    # xaxis = list(title = "Year", automargin=TRUE), 
-    # yaxis = list(title = paste0("Mean % Cover (", input$sel_error, ")"), automargin=TRUE),
-    margin = list(
-      t=120,
-      b=70,
-      l= 100,
-      r=15))
-  
-  gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.10 # move y-axis title more to the left
-  gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.06 # move x-axis title down more. This affects the x-axis title specified in ggplot
-  
-  gp
 })
 
-tags$style("#out_cover_plot{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 plotlyOutput("out_cover_plot")
 ```
 
-### Relative % Cover Plots
+</div>
+<div class="flex-right">
 
+<center><h3>Relative Cover per Site</h3></center>
+<br>
 ```{r plot_RC}
 output$out_RC_plot <- plotly::renderPlotly({
   
   shiny::validate(
-    need(!is.null(rv_param_temp$dat_PC), message = "From 'Data Filter Options' on the left, please select filter criteria then press the green 'UPDATE COVER SUMMARIES' button"))
+    need(!is.null(rv_param_temp$dat_PC), message = "Relative cover is estimated when the grouping level is 'Functional Group' or 'Taxon' with at least one selected sublevel. Press the green 'UPDATE COVER SUMMARIES' button after selection."))
   
-  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(input$sel_lev), !is.null(rv_param_temp$sel_sublev), !is.null(input$sel_ncols))
+  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_lev), !is.null(rv_param_temp$sel_sublev))
   
   shiny::validate(
-    need(input$sel_lev!="Category", message = "Relative % cover is estimated only when the grouping level is 'Functional Group' or 'Taxon'")
+    need(rv_param_temp$sel_lev!="Category", message = "Relative cover is estimated only when the grouping level is 'Functional Group' or 'Taxon'")
   )
   
-  cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") # Colorblind-friendly palette
-  
-  RC_plot_dat <- rv_param_temp$dat_PC %>%
-    dplyr::filter(DenomGroup == "CategoryCount") %>% # relative % cover of category
-    dplyr::rename(CI_low = contains(paste0(input$sel_error, "_low")),
-                  CI_high = contains(paste0(input$sel_error, "_high")))
-  
-if(input$sel_splitplot == "one_loc_one_sub") { # one plot per loc-sub
-  plotly_RC <- 
-    ggplot(data = RC_plot_dat, aes(x = SurvDate, y = EstimCov, N = N, CI_low = CI_low, CI_high = CI_high), colour = "black")
-  } else { # multiple colors in one plot
-    
-    # assign colors
-    color_levels <- switch((input$sel_splitplot == "one_loc_many_sub")+1,  sort(unique(RC_plot_dat$RSS)), sort(unique(RC_plot_dat$NumerLevel))) # levels to be assigned colors
-    cbp1_assigned <- switch((length(color_levels) <= length(cbp1)) + 1,  colorRampPalette(cbp1)(length(color_levels)), cbp1[1:length(color_levels)])
-  
-    plotly_RC <- 
-      ggplot(data = RC_plot_dat, aes_string(x = "SurvDate", y = "EstimCov", colour = ifelse(input$sel_splitplot == "one_loc_many_sub", "NumerLevel", "RSS"), N = "N", CI_low = "CI_low", CI_high = "CI_high")) # additional aes arguments (e.g., CI_low) are for hover text
-  
-  if(input$PC_blackwhite) {
-    plotly_RC <- plotly_RC + scale_colour_grey()
-  } else {
-    plotly_RC <- plotly_RC +
-      scale_color_manual(values = cbp1_assigned)
-  }
-}
-  
-  plotly_RC <- plotly_RC +
-    geom_point() +
-    geom_line() +
-    geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = .25)
-  
-  facet_vars <- switch(input$sel_splitplot,
-                     "one_loc_one_sub" = "~ RSS + NumerLevel",
-                     "one_loc_many_sub" = "~ RSS",
-                     "one_sub_many_loc" = "~ NumerLevel")
-  
-  default_title <- paste0("Mean % Cover Per Transect (", input$sel_error, ")")
-  plotly_RC2 <- plotly_RC +
-    expand_limits(y = switch(is.null(input$PCy_max)+1, c(0, input$PCy_max, 0), 0)) +
-    labs(x = "Year", y = paste0("Mean % Cover Per Transect (", input$sel_error, ")")) +
-    scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
-    facet_wrap(as.formula(facet_vars), scales = "free_y") +
-    theme_bw(base_size = 12) +
-    theme(legend.title = element_blank())
-#,panel.spacing = unit(2, "lines"))
-  
-  facet_ht <- 260
-  add_on_ht <- 180 # this is for title and subtitle
-  page_ht <- switch(input$sel_splitplot,
-                     "one_loc_one_sub" = ceiling(length(rv_param_temp$sel_sublev) * length(rv_param_temp$sel_showRSS)/input$sel_ncols) * facet_ht + add_on_ht,
-                     "one_loc_many_sub" = ceiling(length(rv_param_temp$sel_showRSS)/input$sel_ncols) * facet_ht + add_on_ht,
-                     "one_sub_many_loc" = ceiling(length(rv_param_temp$sel_sublev)/input$sel_ncols) * facet_ht + add_on_ht
-  )
+  FuncPlotPointCI(dat = rv_param_temp$dat_PC, denom = "CategoryCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, PCy_max = input$PCy_max, y_text = paste0("Mean Relative Cover in Group (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite)
 
-  gp <- ggplotly(plotly_RC2,
-                   height = page_ht,
-                   tooltip = c("RSS", "SurvDate", "N", "EstimCov", "CI_low", "CI_high")) # specify the total plot height here because this layout will be applied to the entire page
-  
-#   # Code to fix the duplicate legend entry problem that occurs when ggplotly is used on faceted ggplot with a scale_colour... or scale_fill... argument
-#   for (i in seq_along(gp$x$data)) {
-#   # Is the layer the first entry of the group?
-#   is_first <- grepl("^\\(.*?,1\\)", gp$x$data[[i]]$name)
-#   # Extract the group identifier and assign it to the name and legendgroup arguments
-#   gp$x$data[[i]]$name <- gsub("^\\((.*?),\\d+\\)", "\\1", gp$x$data[[i]]$name)
-#   gp$x$data[[i]]$legendgroup <- gp$x$data[[i]]$name
-#   # Show the legend only for the first layer of the group 
-#   if (!is_first) gp$x$data[[i]]$showlegend <- FALSE
-# }
-  
-  gp <- gp %>% layout(
-    title = list( # axis and other plot titles from ggplot get lost in ggplotly, so specify it here
-      text = paste(switch((nchar(input$PCplot_title)==0)+1, input$PCplot_title, default_title), "<br>", "<sup>", "(X-axis tick marks Jan. 1 of each year)", "</sup>"),
-      xanchor = "center", yanchor = "bottom", x = 0.55, y = 0.96),
-    legend = list(orientation = "h", xanchor = "center", yanchor = "bottom", y = 1.06, x = 0.5),
-    # xaxis = list(title = "Year", automargin=TRUE), 
-    # yaxis = list(title = paste0("Mean % Cover (", input$sel_error, ")"), automargin=TRUE),
-    margin = list(
-      t=120,
-      b=70,
-      l= 100,
-      r=15))
-  
-  gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.10 # move y-axis title more to the left
-  gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.06 # move x-axis title down more. This affects the x-axis title specified in ggplot
-  
-  gp
 })
 
-tags$style("#out_RC_plot{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 plotlyOutput("out_RC_plot")
+```
+</div>
+</div>
+
+Bleaching
+======================================
+Inputs {.sidebar data-width=200}
+-------------------------------------
+```{r input_bleach_filter}
+br()
+
+h4("Data Filter Options")
+
+# shinyjs::hidden( # initially hide this well panel
+wellPanel(
+  id = "wp_bleach_criteria",
+  
+  # Pre-filter data
+  checkboxInput("bleach_RSS_active", label = "Only use active sites", value = FALSE), 
+  checkboxInput("sel_bleach_episodic", label = "Include episodic survey data", value = TRUE),
+  
+  # Select spatial scale--sites or reporting sites
+  renderUI({
+    radioButtons("sel_bleach_sitescale", 
+                 label = "Summarize data at this spatial scale:", 
+                 choiceNames = list("Reporting Site", "Site"),
+                 choiceValues = list("ReportingSite", "Site"),
+                 selected = switch(is.null(input$sel_sitescale)+1, input$sel_sitescale, "Site"),
+                 inline = TRUE)
+  }),
+  
+  tags$div(renderText({
+    shiny::req(!is.null(input$sel_sitescale))
+    if(input$sel_sitescale == "ReportingSite") {
+      paste0("NOTE: Summaries by Reporting Site are limited to survey events for which data are available for all included Sites")  # Explain how reporting sites are summarized
+    }
+  }), style = "font-size:14px;, !is. color:red; font-weight:bold;"),
+  
+  renderUI({
+    shiny::req(!is.null(rv$map_dat), !is.null(input$sel_bleach_sitescale), !is.null(input$bleach_RSS_active))
+    
+    bleach_RSS_choices <- rv$map_dat %>%
+      dplyr::filter(if(input$bleach_RSS_active == TRUE) IsActive == 1 else TRUE) %>%
+      {if(input$sel_bleach_sitescale == "Site") dplyr::select(., Site) else dplyr::select(., ReportingSite)} %>%
+      dplyr::distinct() %>%
+      pull() %>%
+      as.character()
+    
+    # Select (reporting) site
+    selectInput("sel_bleach_showRSS", 
+                label = paste0("Show results for this ", ifelse(input$sel_bleach_sitescale == "ReportingSite", "reporting site", "site")),
+                choices = bleach_RSS_choices, 
+                selected = switch(is.null(input$sel_bleach_showRSS)+1, input$sel_bleach_showRSS, bleach_RSS_choices[1]))
+  })
+) # end of 'wp_cover_criteria'
+```
+*\*To export a bleach plot, right-click on the plot and select 'Save image as'*
+  
+Column
+-------------------------------------
+### Coral Bleaching as % Cover of Site
+  
+```{r plot_bleachPC}
+output$out_bleach_PC_plot <- plotly::renderPlotly({
+  shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale), !is.null(input$sel_bleach_showRSS))
+
+    # Data to display in plots and table
+  rv_param_temp$bleach_subdat <- rv$bleach_CIs_df %>%
+    dplyr::mutate(RSS = get(input$sel_bleach_sitescale),
+                  Year = lubridate::year(SurvDate),
+                  NumerLevel = factor(NumerLevel, levels = c("NONCORAL", "NoData", "UNBL", "BL1", "BL2", "BL3", "BL4"))) %>%
+    dplyr::filter(
+      RSS == input$sel_bleach_showRSS,
+      if(input$sel_bleach_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
+    arrange(SurvDate) %>%
+    dplyr::mutate(SurvDate = as.factor(SurvDate))
+  
+  shiny::req(!is.null(rv_param_temp$bleach_subdat))
+
+  plot_bleachPC <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "TransectCount"))
+    
+  ggplotly(plot_bleachPC)
+ 
+})
+plotlyOutput("out_bleach_PC_plot")
+```
+
+### Coral Bleaching as % Cover of Corals
+  
+```{r plot_bleachRC}
+output$out_bleach_RC_plot <- plotly::renderPlotly({
+  shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale), !is.null(input$sel_bleach_showRSS))
+  
+  shiny::req(!is.null(rv_param_temp$bleach_subdat))
+  
+  plot_bleachRC <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "CategoryCount"))
+    
+  ggplotly(plot_bleachRC)
+ 
+})
+plotlyOutput("out_bleach_RC_plot")
+```
+
+All Bleaching Data
+======================================
+
+```{r}
+output$out_bleach_tab <- DT::renderDT({
+  shiny::req(!is.null(rv$bleach_CIs_df))
+  
+  DT::datatable(
+    rv$bleach_CIs_df,
+    class="compact stripe",
+    rownames= FALSE,
+    options = list(
+      pageLength = 20,
+      autoWidth = TRUE,
+      dom = 'Bfrtip',
+      buttons = c('copy', 'csv', 'excel', 'pdf'),
+      columnDefs = list(list(className = 'dt_center', targets = "_all"))
+      )
+  )
+})
+
+dataTableOutput("out_bleach_tab")
+tags$style("#out_bleach_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ```
