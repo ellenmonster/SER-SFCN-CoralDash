@@ -29,7 +29,7 @@ rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list
 rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, transects_subdat = data.frame(), bleach_subdat = data.frame())
 
 ### Load test data <<<<< THIS IS JUST FOR TESTING
-  rv <- readRDS("~/NPS PROJECTS_CURRENT/Dash_SFCN corals/temp_coralsummary.RDS")
+  # rv <- readRDS("~/NPS PROJECTS_CURRENT/Dash_SFCN corals/temp_coralsummary.RDS")
 ```
 
 ```{r functions}
@@ -148,7 +148,7 @@ rv_param_temp <- reactiveValues(dat_PC = NULL, avail_sublevs = NULL, sel_showRSS
 #   return(return_list)
 # }
 
-FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, PCy_max, y_text, PC_blackwhite) {
+FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, y_text, PC_blackwhite) {
   # Function to generate point plots with error bars
   #
   # Args:
@@ -163,7 +163,7 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, PCy_max, y_tex
   
   # Colorblind-friendly palette
   cbp1 <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#999999", "#F0E442", "#000000", "chocolate4", "purple4", "chartreuse", "lightpink", "honeydew2") 
-  
+  cat("line166")
   # Set up the data
   plot_dat <- dat %>%
     dplyr::filter(DenomGroup == denom) %>% 
@@ -181,7 +181,7 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, PCy_max, y_tex
     cbp1_assigned <- switch((length(color_levels) <= length(cbp1)) + 1,  colorRampPalette(cbp1)(length(color_levels)), cbp1[1:length(color_levels)])
    
     p <- 
-      ggplot(data = plot_dat, aes_string(x = "SurvDate", y = "EstimCov", colour = ifelse(sel_splitplot == "one_loc_many_sub", "NumerLevel", "RSS"))) 
+      ggplot(data = plot_dat, aes_string(x = "SurvDate", y = "EstimCov", colour = if_else(sel_splitplot == "one_loc_many_sub", "NumerLevel", "RSS"))) 
     
     if(PC_blackwhite) {
       p <- p + scale_colour_grey()
@@ -202,10 +202,11 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, PCy_max, y_tex
                        "one_sub_many_loc" = "~ NumerLevel")
   
   p <- p +
-    expand_limits(y = switch(is.null(PCy_max)+1, c(0, PCy_max, 0), 0)) +
+    # expand_limits(y = switch(is.null(PCy_max)+1, c(0, PCy_max, 0), 0)) +
+    expand_limits(y = c(0, 1)) + # y-axes must include 1
     labs(x = "Year", y = y_text) +
     scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
-    facet_wrap(as.formula(facet_vars), scales = "free_y", ncol = 1) +
+    facet_wrap(as.formula(facet_vars), scales = if_else(free_ymax, "free_y", "fixed"), ncol = 1) +
     theme_bw(base_size = 12) +
     theme(legend.title = element_blank())
   
@@ -343,7 +344,7 @@ observeEvent(eventExpr = input$button_update_cover, {
   shiny::req(!is.null(rv$cover_CIs_df), !is.null(input$sel_lev), !is.null(input$sel_sitescale), !is.null(input$sel_showRSS), !is.null(input$sel_episodic), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(input$sel_splitplot))
   
   if(input$sel_lev != "Category") {shiny::validate(need(!is.null(input$sel_sublev), message = "Please select at least one sublevel, then press the green 'UPDATE COVER SUMMARIES' button"))}
- 
+ cat("line346")
   dat_PC <- rv$cover_CIs_df %>%
     dplyr::filter(
       RSS %in% input$sel_showRSS,
@@ -567,7 +568,7 @@ wellPanel(
 
   renderUI({
     shiny::req(!is.null(rv$map_dat), !is.null(input$sel_raw_sitescale), !is.null(input$raw_RSS_active))
-    
+    cat("line570")
     raw_RSS_choices <- rv$map_dat %>%
       dplyr::filter(if(input$raw_RSS_active == TRUE) IsActive == 1 else TRUE) %>%
       {if(input$sel_raw_sitescale == "Site") dplyr::select(., Site) else dplyr::select(., ReportingSite)} %>%
@@ -579,7 +580,7 @@ wellPanel(
     
     # Select (reporting) site
     selectInput("sel_raw_showRSS", 
-                       label = paste0("Show results for this ", ifelse(input$sel_raw_sitescale == "ReportingSite", "reporting site", "site")),
+                       label = paste0("Show results for this ", if_else(input$sel_raw_sitescale == "ReportingSite", "reporting site", "site")),
                        choices = raw_RSS_choices, 
                        selected = switch(is.null(input$sel_raw_showRSS)+1, input$sel_raw_showRSS, raw_RSS_choices[1]))
     }),
@@ -604,7 +605,6 @@ wellPanel(
         if(input$sel_raw_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
       dplyr::pull(SurvDate) %>%
       as.character()
-    
     sliderTextInput("sel_raw_dates",
                 label = "Compare % cover for two survey events (red lines on plots)",
                 choices = date_opts,
@@ -659,12 +659,14 @@ plotlyOutput('out_transects_plot', height="100%", width = "100%")
 ```{r}
 output$out_compare_tab <- DT::renderDT({
   shiny::req(!is.null(rv_param_temp$transects_subdat), !is.null(input$sel_raw_dates))
-  
+  shiny::req(length(unique(input$sel_raw_dates)) == 2)
+
   compare_dat <- rv_param_temp$transects_subdat %>%
     dplyr::select(ReportingSite, Site, Transect, SurvDate, PercCov) %>%
     dplyr::mutate(SurvDate = as.character(SurvDate)) %>%
   dplyr::filter(SurvDate %in% input$sel_raw_dates)  %>%
   tidyr::pivot_wider(names_from = SurvDate, values_from = PercCov, names_prefix = "%Cover on ")
+
   compare_dat$`Change in %Cover` = compare_dat[5] - compare_dat[4]
   
   DT::datatable(
@@ -731,7 +733,7 @@ wellPanel(
     
     # Select (reporting) sites
     checkboxGroupInput("sel_showRSS", 
-                       label = paste0("Show results for these ", ifelse(input$sel_sitescale == "ReportingSite", "reporting sites", "sites")),
+                       label = paste0("Show results for these ", if_else(input$sel_sitescale == "ReportingSite", "reporting sites", "sites")),
                        choices = RSS_choices, 
                        selected = if(!is.null(input$sel_showRSS) & all(input$sel_showRSS %in% RSS_choices)) {input$sel_showRSS} else {RSS_choices}, # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
                        inline = FALSE) 
@@ -762,7 +764,7 @@ wellPanel(
   # Group levels to choose from (e.g., algae, coral...) for the selected grouping level. For Functional Group, only options are ALGAE and CORAL. For Taxon, options are ALGAE, CORAL, GORGO, SPONGE
   renderUI({
     shiny::req(!is.null(rv$groups_df), !is.null(input$sel_lev), !is.null(input$sel_sitescale), !is.null(input$sel_showRSS), !is.null(input$sel_episodic))
-    
+    cat("line770")
     rv_param_temp$avail_sublevs <- rv$cover_CIs_df %>%
       dplyr::filter(
         # SiteScale == input$sel_sitescale,
@@ -775,7 +777,7 @@ wellPanel(
       unique() %>%
       sort()
       
-  # sublev_default <- ifelse("CORAL" %in% rv_param_temp$avail_sublevs, "CORAL", rv_param_temp$avail_sublevs[1])
+  # sublev_default <- if_else("CORAL" %in% rv_param_temp$avail_sublevs, "CORAL", rv_param_temp$avail_sublevs[1])
 
   checkboxGroupInput("sel_sublev", 
                      label = "Select sublevel(s)",
@@ -817,7 +819,7 @@ renderUI({
              label = "Bootstrapped error bars to plot",
              choiceNames = list("90%CI", "68%CI (~1SE)", "50%CI"),
              choiceValues = list("90%CI", "68%CI", "50%CI"),
-             selected = switch(is.null(input$sel_error)+1, input$sel_error, "90%CI"),
+             selected = switch(is.null(input$sel_error)+1, input$sel_error, "68%CI"),
              inline = TRUE)
 })
 
@@ -831,9 +833,8 @@ renderUI({
   checkboxInput("PC_blackwhite", label = "Plot in grayscale (can only handle up to 6 categories)", value = switch(is.null(input$PC_blackwhite)+1, input$PC_blackwhite, FALSE))
 })
 
-renderUI({
-  numericInput("PCy_max", label = "Set y-axis maximum", min = 5, max = 105, step = 5, value = switch(is.null(input$PCy_max)+1, input$PCy_max, NULL))
-})
+checkboxInput("free_ymax", label = "Allow y-axes scales to vary among plots", value = TRUE)
+
 ```
 
 % Cover & Relative Cover per Site
@@ -846,12 +847,16 @@ renderUI({
 <br>
 ```{r plot_PC}
 output$out_cover_plot <- plotly::renderPlotly({
+  
+  shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
   shiny::validate(
     need(!is.null(rv_param_temp$dat_PC), message = "From 'Data Filter Options' on the left, please select a grouping level and sublevel(s), then press the green 'UPDATE COVER SUMMARIES' button"))
   
   shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev))
 
-FuncPlotPointCI(dat = rv_param_temp$dat_PC, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, PCy_max = input$PCy_max, y_text = paste0("Mean % Cover Per Transect (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite)
+FuncPlotPointCI(dat = rv_param_temp$dat_PC, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, y_text = paste0("Mean % Cover Per Transect (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite)
   
 })
 
@@ -867,6 +872,9 @@ plotlyOutput("out_cover_plot")
 output$out_RC_plot <- plotly::renderPlotly({
   
   shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
+  shiny::validate(
     need(!is.null(rv_param_temp$dat_PC), message = "Relative cover is estimated when the grouping level is 'Functional Group' or 'Taxon' with at least one selected sublevel. Press the green 'UPDATE COVER SUMMARIES' button after selection."))
   
   shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_lev), !is.null(rv_param_temp$sel_sublev))
@@ -875,7 +883,7 @@ output$out_RC_plot <- plotly::renderPlotly({
     need(rv_param_temp$sel_lev!="Category", message = "Relative cover is estimated only when the grouping level is 'Functional Group' or 'Taxon'")
   )
   
-  FuncPlotPointCI(dat = rv_param_temp$dat_PC, denom = "CategoryCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, PCy_max = input$PCy_max, y_text = paste0("Mean Relative Cover in Group (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite)
+  FuncPlotPointCI(dat = rv_param_temp$dat_PC, denom = "CategoryCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, y_text = paste0("Mean Relative Cover in Group (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite)
 
 })
 
@@ -920,7 +928,7 @@ wellPanel(
   
   renderUI({
     shiny::req(!is.null(rv$map_dat), !is.null(input$sel_bleach_sitescale), !is.null(input$bleach_RSS_active))
-    
+    cat("line928")
     bleach_RSS_choices <- rv$map_dat %>%
       dplyr::filter(if(input$bleach_RSS_active == TRUE) IsActive == 1 else TRUE) %>%
       {if(input$sel_bleach_sitescale == "Site") dplyr::select(., Site) else dplyr::select(., ReportingSite)} %>%
@@ -930,7 +938,7 @@ wellPanel(
     
     # Select (reporting) site
     selectInput("sel_bleach_showRSS", 
-                label = paste0("Show results for this ", ifelse(input$sel_bleach_sitescale == "ReportingSite", "reporting site", "site")),
+                label = paste0("Show results for this ", if_else(input$sel_bleach_sitescale == "ReportingSite", "reporting site", "site")),
                 choices = bleach_RSS_choices, 
                 selected = switch(is.null(input$sel_bleach_showRSS)+1, input$sel_bleach_showRSS, bleach_RSS_choices[1]))
   })
@@ -944,8 +952,11 @@ Column
   
 ```{r plot_bleachPC}
 output$out_bleach_PC_plot <- plotly::renderPlotly({
+  shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
   shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale), !is.null(input$sel_bleach_showRSS))
-
+cat("line953")
     # Data to display in plots and table
   rv_param_temp$bleach_subdat <- rv$bleach_CIs_df %>%
     dplyr::mutate(RSS = get(input$sel_bleach_sitescale),
@@ -971,6 +982,10 @@ plotlyOutput("out_bleach_PC_plot")
   
 ```{r plot_bleachRC}
 output$out_bleach_RC_plot <- plotly::renderPlotly({
+  
+  shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
   shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale), !is.null(input$sel_bleach_showRSS))
   
   shiny::req(!is.null(rv_param_temp$bleach_subdat))
@@ -988,6 +1003,9 @@ All Bleaching Data
 
 ```{r}
 output$out_bleach_tab <- DT::renderDT({
+  shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
   shiny::req(!is.null(rv$bleach_CIs_df))
   
   DT::datatable(
@@ -1006,4 +1024,80 @@ output$out_bleach_tab <- DT::renderDT({
 
 dataTableOutput("out_bleach_tab")
 tags$style("#out_bleach_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+```
+
+Coral Maps
+====================================== 
+  Inputs {.sidebar data-width=200}
+-------------------------------------
+```{r map_input}
+renderUI({
+  shiny::req(!is.null(rv$bleach_CIs_df))
+  sliderTextInput("sel_map_event", force_edges = TRUE, animate = TRUE, label = "Choose a survey event", choices = sort(as.character(unique(rv$bleach_CIs_df$SurvDate))), selected = , dragRange = FALSE, width = "95%")
+  })
+
+checkboxInput("sel_map_active", label = "Show active sites only", value = FALSE)
+
+radioButtons("sel_map_metric", 
+             label = "Metric to map:", 
+             choiceNames = list("% coral cover", "bleaching relative cover"),
+             choiceValues = list("coral_pc", "bleach_rc"),
+             selected = "coral_pc")
+```
+
+Column {data-width=550 vertical_layout: fill}
+-------------------------------------
+*NOTE:  For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)*
+```{r maps}
+output$coral_map = renderLeaflet({
+  
+  shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
+  shiny::validate(need(!is.null(rv$map_dat), message = "Map data have not been processed."))
+  
+saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
+saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS")
+  
+  shiny::req(!is.null(input$sel_map_active), !is.null(input$sel_map_metric), !is.null(input$sel_map_event))
+    
+    map_df <- rv$map_dat %>%
+      dplyr::filter(if(input$sel_map_active == TRUE) IsActive == 1 else TRUE)
+    
+    shiny::req(nrow(map_df) > 0)
+    
+    min_long <- min(map_df$MedLong, na.rm = TRUE)
+    min_lat <- min(map_df$MedLat, na.rm = TRUE)
+    max_long <- max(map_df$MedLong, na.rm = TRUE)
+    max_lat <- max(map_df$MedLat, na.rm = TRUE)
+    
+    map_df %<>%
+      dplyr::filter(SurvDate == input$sel_map_event) %>%
+      select(-c(ReportingSiteName, ReportingSite, IsActive, MinYr, MaxYr))
+  cat("line1076")
+    chartmap <- leaflet() %>%
+      addProviderTiles("Esri.NatGeoWorldMap", options = providerTileOptions(noWrap = TRUE)) %>%
+      addControl(HTML(switch(input$sel_map_metric, "coral_pc" = "% Cover coral", "bleach_rc" = "Coral bleaching relative cover"), " on: ", input$sel_map_event), position = "topleft", className="map-title") %>%
+      addScaleBar() %>% 
+      leaflet.minicharts::addMinicharts(
+          lng = map_df$MedLong,
+          lat = map_df$MedLat,
+          time = map_df$SurvDate,
+          type = "pie",
+          width = switch(input$sel_map_metric,
+                         "coral_pc" = 25,
+                         "bleach_rc" = 5*map_df$`%Coral`), 
+          height = switch(input$sel_map_metric,
+                         "coral_pc" = 25,
+                         "bleach_rc" = NA), 
+          transitionTime = 0, 
+          layerId = map_df$PopText,
+          chartdata = switch(input$sel_map_metric,
+                         "coral_pc" = as.matrix(map_df[, c("%Coral", "%NonCoral")]),
+                         "bleach_rc" = as.matrix(map_df[, c("NoData", "UNBL", "BL1", "BL2", "BL3", "BL4")])), 
+          colorPalette = switch(input$sel_map_metric,
+                         "coral_pc" = c("red", "gray"),
+                         "bleach_rc" = c("#FFFF00", "#404040", "#737373", "#8C8C8C", "#BFBFBF", "#EBEBEB")),
+          opacity = .85) 
+})
+leafletOutput('coral_map', height=600)
 ```

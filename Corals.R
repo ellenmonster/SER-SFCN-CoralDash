@@ -5,7 +5,7 @@
 ### LOAD PACKAGES ----
 # Look for packages on local machine, install if necessary, then load all
 pkgList_pre <- c("magrittr", 
-                 "data.table",
+                 "vroom",
                  "plyr",
                  "lubridate",
                  "ggpubr", # to get legends
@@ -142,7 +142,7 @@ FuncBootDraws <- function(boot_dat, actual_dat, start_col, groups_df, combos_df,
         dplyr::group_by(BootRep, Category, NumerLevel) %>%
         dplyr::summarize(SampGroupCount = sum(GroupCount), .groups = "drop") %>%
         dplyr::left_join(categtot_df, by = c("BootRep", "Category")) %>%
-        dplyr::mutate(EstimCov = SampGroupCount/CategTot)
+        dplyr::mutate(EstimCov = 100*(SampGroupCount/CategTot))
       
       # Extract the means calculated for the original data (BootRep = 0) so can be added to the final data frame
       actual_relcov_df <- subset(relcov_df, BootRep == 0) %>% 
@@ -328,13 +328,13 @@ FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_d
 FuncCorals <- function(filenam, sitesfilenam = NULL, out_prefix) {
 
 # ### IMPORT AND FORMAT DATA ----
-coral <- data.table::fread(filenam)
-if(!is.null(sitesfilenam)) tbl_link <- data.table::fread(sitesfilenam)
+coral <- vroom::vroom(filenam)
+if(!is.null(sitesfilenam)) tbl_link <- vroom::vroom(sitesfilenam)
 
 # #  <<<<<<<< TESTING >>>>>>>>>>>>>> ----
-# coral <- data.table::fread("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- data.table::fread("Data_LOCAL_ONLY/demo_CoralDat.csv")
+# coral <- vroom::vroom("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- vroom::vroom("Data_LOCAL_ONLY/demo_CoralDat.csv")
 # out_prefix="test"
-# tbl_link <- data.table::fread("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
+# tbl_link <- vroom::vroom("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
 
 # Format columns ----
 coral$Date <- lubridate::mdy(coral$Date)
@@ -492,12 +492,14 @@ bleach_combos_df <- tibble(
 ## SITE-LEVEL ESTIMATES ----
 
 # Site-level cover estimates ----
-cat(">>> Site-level cover estimates <<<")
+incProgress(1/5, detail = paste0("...site-level % cover estimates"))
 # First, work with taxon count data
 # For each transect-survey, generate parametric bootstrap samples (default is N = 1M) using the probabilities from the collected data. Run one site-survey at a time to avoid computer memory problems
 site_CIs_list <- apply(unique(boot_site_dat[c( "Site", "SurvDate")]), 1, FUN = function(x) {
   
-  cat(x[["Site"]], x[["SurvDate"]], "/n")
+incProgress(1/5, detail = paste0("...site-level % cover estimates for ", x[["Site"]], x[["SurvDate"]]))
+  cat("site-level % cover estimates")
+  cat(x[["Site"]], x[["SurvDate"]])
   subdat <- boot_site_dat %>%
     dplyr::filter(Site == x[["Site"]] & SurvDate == x[["SurvDate"]]) %>% # pull data for the specific site and survey date
     dplyr::select(where(~!all(is.na(.x)))) # get rid of cols with no data
@@ -521,7 +523,7 @@ site_CIs_df <- as.data.frame(do.call("rbind", site_CIs_list))
 site_CIs_df$SurvDate <- lubridate::ymd(site_CIs_df$SurvDate)
 
 # Site-level coral bleaching estimates ----
-cat(">>> Site-level coral bleaching estimates <<<")
+incProgress(2/5, detail = paste0("...site-level coral bleaching estimates"))
 # Seems like most of the bleaching is in the Orbicella functional group. Within that, OFAV is the one least affected, there are 3 taxa highly affected. Raw data plots will show this.
 
 # Now work with coral bleach data
@@ -536,7 +538,9 @@ boot_bleach_dat <- boot_master_dat %>%
 # For each transect-survey, generate parametric bootstrap samples 
 site_bleach_CIs_list <- apply(unique(boot_bleach_dat[c("Site", "SurvDate")]), 1, FUN = function(x) {
   
-  cat(x[["Site"]], x[["SurvDate"]], "/n")
+incProgress(2/5, detail = paste0("...site-level coral bleaching estimates for ", x[["Site"]], x[["SurvDate"]]))
+  cat("site-level coral bleaching estimates")
+  cat(x[["Site"]], x[["SurvDate"]])
   bleach_subdat <- boot_bleach_dat %>%
     dplyr::filter(Site == x[["Site"]] & SurvDate == x[["SurvDate"]]) %>% # pull data for the specific site and survey date
     dplyr::select(where(~!all(is.na(.x)))) # get rid of cols with no data
@@ -572,11 +576,14 @@ RS_estim_dates <- boot_master_dat %>%
   dplyr::select(-NumSub, -NumSubSurveyed)
 
 # Reporting site-level cover estimates ----
-cat(">>> Reporting site-level cover estimates <<<")
+incProgress(3/5, detail = paste0("...`reporting site`-level % cover estimates"))
+if(nrow(RS_estim_dates) > 0) {
 # For each combination of reporting site and survey date
 RS_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate")]), 1, FUN = function(x) {
   
-  cat(x[["ReportingSite"]], x[["SurvDate"]], "/n")
+incProgress(3/5, detail = paste0("...`reporting site`-level % cover estimates for ", x[["ReportingSite"]], x[["SurvDate"]]))
+  cat("reporting site-level % cover estimates")
+  cat(x[["ReportingSite"]], x[["SurvDate"]])
   subsites <- RS_estim_dates %>% dplyr::filter(ReportingSite == x[["ReportingSite"]] & SurvDate == x[["SurvDate"]]) %>% dplyr::pull(Site) # these are the sites in that RS with that survey date
   RS_subdat <- boot_site_dat %>%
     dplyr::filter(Site %in% subsites & SurvDate == x[["SurvDate"]]) %>% # pull data for the specific site and survey date
@@ -604,12 +611,13 @@ RS_CIs_df <- as.data.frame(do.call("rbind", RS_CIs_list))
 RS_CIs_df$SurvDate <- lubridate::ymd(RS_CIs_df$SurvDate)
 
 # Reporting site-level coral bleaching estimates ----
-cat(">>> Reporting site-level coral bleaching estimates <<<")
+incProgress(4/5, detail = paste0("...`reporting site`-level coral bleaching estimates"))
 # For each reporting site-survey, generate parametric bootstrap samples 
 RS_bleach_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate")]), 1, FUN = function(x) {
   
-  cat(x[["ReportingSite"]], x[["SurvDate"]], "/n")
-  
+incProgress(4/5, detail = paste0("...`reporting site`-level coral bleaching estimates for ", x[["ReportingSite"]], x[["SurvDate"]]))
+  cat("reporting site-level coral bleaching estimates")
+  cat(x[["ReportingSite"]], x[["SurvDate"]])
   subsites <- RS_estim_dates %>% dplyr::filter(ReportingSite == x[["ReportingSite"]] & SurvDate == x[["SurvDate"]]) %>% dplyr::pull(Site) # these are the sites in that RS with that survey date
   
   RS_bleach_subdat <- boot_bleach_dat %>%
@@ -636,6 +644,9 @@ RS_bleach_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate"
 
 RS_bleach_CIs_df <- as.data.frame(do.call("rbind", RS_bleach_CIs_list))
 RS_bleach_CIs_df$SurvDate <- lubridate::ymd(RS_bleach_CIs_df$SurvDate)
+} else {
+  RS_CIs_df <- RS_bleach_CIs_df <- NULL
+}
 
 ### ADD CORAL NUMBERS TO MAPDAT ----
 
@@ -660,21 +671,31 @@ mapdat2 <- mapdat %>%
   mutate(PopText = paste0(PopText, ": ", SurvDate, "(", Purpose, ")")) %>%
   dplyr::select("ReportingSite", "ReportingSiteName", "Site", "IsActive", "NumTransects", "MinYr", "MaxYr", "MedLat", "MedLong", "SurvDate", "Purpose", "PopText", "%Coral", "%NonCoral", "UNBL", "BL1", "BL2", "BL3", "BL4", "NoData") # order columns
 
-cover_CIs_df <- rbind( # additional info on site-survey
-  site_CIs_df %>% 
-    left_join(coral[c("Site", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("Site", "SurvDate")), 
-  RS_CIs_df %>%
-    left_join(coral[c("ReportingSite", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("ReportingSite", "SurvDate"))
-  ) %>%
+cover_CIs_df <- site_CIs_df %>% 
+    left_join(coral[c("Site", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("Site", "SurvDate")) %>%
   dplyr::select(SiteScale, ReportingSite, Site, RSS, IsActive, SurvDate, Purpose, N, everything())
 
-bleach_CIs_df <- rbind(
-  site_bleach_CIs_df %>% 
-    left_join(coral[c("Site", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("Site", "SurvDate")), 
-  RS_bleach_CIs_df %>%
-    left_join(coral[c("ReportingSite", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("ReportingSite", "SurvDate"))
-) %>%
+if (!is.null(RS_CIs_df)) {
+cover_CIs_df <- rbind(
+  cover_CIs_df,
+  RS_CIs_df %>%
+    left_join(coral[c("ReportingSite", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("ReportingSite", "SurvDate")) %>%
   dplyr::select(SiteScale, ReportingSite, Site, RSS, IsActive, SurvDate, Purpose, N, everything())
+)
+}
+
+bleach_CIs_df <- site_bleach_CIs_df %>% 
+    left_join(coral[c("Site", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("Site", "SurvDate")) %>%
+  dplyr::select(SiteScale, ReportingSite, Site, RSS, IsActive, SurvDate, Purpose, N, everything())
+
+if(!is.null(RS_bleach_CIs_df)) {
+  bleach_CIs_df <- rbind(
+    bleach_CIs_df,
+    RS_bleach_CIs_df %>%
+    left_join(coral[c("ReportingSite", "SurvDate", "IsActive", "Purpose")] %>% distinct(), by = c("ReportingSite", "SurvDate")) %>%
+  dplyr::select(SiteScale, ReportingSite, Site, RSS, IsActive, SurvDate, Purpose, N, everything())
+  )
+}
 
 # Calculate % cover by category for each transect
 transect_counts_df <- boot_master_dat %>%
