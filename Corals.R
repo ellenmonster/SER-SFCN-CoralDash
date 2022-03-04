@@ -17,8 +17,96 @@ if (length(pkgList_pre[!inst_pre]) > 0) install.packages(pkgList_pre[!inst_pre],
 lapply(pkgList_pre, library, character.only = TRUE)
 
 ### FUNCTIONS ----
-# Function to calculate bootstrap quantiles from long-format data and format output with one col per quantile
+
+FuncWarnings <- function(dat, disease_dat, colcounts_dat) {
+  warn_list <- sapply(c("CertLevel", "AltPurp", "UNKTaxon", "BleachCode", "TransCount", "TaxonCountDiv", "TaxonCount", "EquipShadowCount", "UNKCount", "UNKDisease", "DiseaseColLT4CM", "UnmatchedDiseaseID", "UnmatchedColCountsID"), function(x) NULL)
+  
+  dat_accepted <- round(100* sum(dat$VideoCertificationLevel == "Accepted")/ nrow(dat))
+  disease_accepted <- round(100* sum(disease_dat$DiseaseCertificationLevel == "Accepted")/nrow(disease_dat))
+  colcounts_accepted <- round(100* sum(colcounts_dat$ColCountsCertificationLevel == "Accepted")/nrow(colcounts_dat))
+  warn_list$CertLevel <- data.frame(Data = c("coral video summary", "disease", "colony counts"), "%Accepted" = c(dat_accepted, disease_accepted, colcounts_accepted))
+  
+  warn_list$AltPurp <- dat %>%
+    dplyr::arrange(SurvDate) %>%
+    dplyr::select(TripName, Purpose) %>%
+    dplyr::filter(!Purpose %in% c("Annual", "Episodic")) %>%
+    distinct() %>%
+    dplyr::rename("Trip" = TripName)
+  
+  warn_list$UNKTaxon <- dat %>%
+    dplyr::select(TransectSurveyID, Taxon) %>%
+    dplyr::filter(Taxon == "UNK") %>%
+    dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID")
+  
+  warn_list$BleachCode <- dat %>%
+    dplyr::select(TransectSurveyID, Category, BleachingCode) %>%
+    dplyr::filter(Category != "CORAL" & !is.na(BleachingCode)) %>%
+    dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID")
+  
+  warn_list$TransCount <- dat %>%
+    dplyr::select(Site, Transect, SurvDate, Purpose) %>%
+    distinct() %>%
+    dplyr::group_by(Site, SurvDate, Purpose) %>%
+    dplyr::arrange(Site, SurvDate, Purpose) %>%
+    dplyr::summarize(NumTransects = n(), .groups = "drop") %>%
+    dplyr::filter(Purpose %in% c("Annual", "Episodic") & !NumTransects %in% c(4, 20)) %>% # 'off' transect counts only matters for annual or episodic surveys
+    dplyr::mutate(SurvDate = lubridate::ymd(SurvDate)) %>% # renderTable does not play nice with dates--need to format as character
+    dplyr::rename("Survey Date" = "SurvDate")
+  
+  Err_counts <- dat %>%
+    dplyr::group_by(TransectSurveyID) %>%
+    dplyr::summarize(TotPoints = sum(CountOfTaxon, na.rm=TRUE),
+                     EquipShadowPoints = sum(CountOfTaxon[Category %in% c("EQUIP", "SHADOW")]),
+                     UNKPoints = sum(CountOfTaxon[Category %in% c("UNK", "UNKNOWN") | is.na(Category)]), .groups = "drop")
+  
+  warn_list$TaxonCountDiv <- Err_counts %>%
+    dplyr::mutate(ModOut = TotPoints %% 10) %>%
+    dplyr::filter(ModOut != 0) %>%
+    dplyr::select(TransectSurveyID, TotPoints) %>%
+    dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID", "Total Points" = TotPoints)
+  
+  warn_list$TaxonCount <- Err_counts %>%
+    dplyr::filter(TotPoints < 200 | TotPoints > 480) %>%
+    dplyr::select(TransectSurveyID, TotPoints) %>%
+    dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID", "Total Points" = TotPoints)
+  
+  warn_list$EquipShadowCount <- Err_counts %>%
+    dplyr::mutate(PercEquipShadow = (EquipShadowPoints / TotPoints)*100) %>%
+    dplyr::filter(PercEquipShadow > 5.0) %>%
+    dplyr::select(TransectSurveyID, PercEquipShadow) %>%
+    dplyr::arrange(desc(PercEquipShadow)) %>%
+    dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID", "% Equip or Shadow" = PercEquipShadow)
+  
+  warn_list$UNKCount <- Err_counts %>%
+    dplyr::mutate(PercUNK = (UNKPoints / TotPoints)*100) %>%
+    dplyr::filter(PercUNK > 5.0) %>%
+    dplyr::select(TransectSurveyID, PercUNK) %>%
+    dplyr::arrange(desc(PercUNK)) %>%
+    dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID", "% Unknown" = PercUNK)
+  
+  warn_list$UNKDisease <- disease_dat %>%
+    dplyr::select(TransectSurveyID, DiseaseCode, Taxon, DiseaseCertificationLevel) %>%
+    dplyr::filter(DiseaseCode == "UNK") %>%
+    dplyr::arrange(TransectSurveyID) %>%
+    dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID")
+  
+  warn_list$DiseaseColLT4CM <- disease_dat %>%
+    dplyr::select(TransectSurveyID, DiseaseCode, Taxon, ColonyLT4CM,  DiseaseCertificationLevel) %>%
+    dplyr::filter(ColonyLT4CM == TRUE)
+  
+  warn_list$UnmatchedDiseaseID <- data.frame(
+    `Unmatched Site_Transect_SurveyDate` = setdiff(unique(disease_dat$TransectSurveyID), unique(dat$TransectSurveyID))
+  )
+  
+  warn_list$UnmatchedColCountsID <- data.frame(
+    `Unmatched Site_Transect_SurveyDate` = setdiff(unique(colcounts_dat$TransectSurveyID), unique(dat$TransectSurveyID))
+  )
+  
+  return(warn_list)
+}
+
 FuncPullQuant <- function() {
+  # Function to calculate bootstrap quantiles from long-format data and format output with one col per quantile
   purrr::map(
   c(0.25, 0.75, 0.16, 0.84, 0.05, 0.95), 
   ~purrr::partial(quantile, probs = .x, na.rm = TRUE)) %>% # apply quantile function to each specified probability, resulting format has a separate col for each quantile (instead of a separate row for each quantile)
@@ -202,7 +290,7 @@ FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_d
   #
   # NOTE: Not estimating CI's for trend -- just individually by site-survey.
   
-  n_transects <- 4 # number of transects surveyed in each subsite-survey
+  n_transects <- 4 # <<<<<<<<<number of transects surveyed in each subsite-survey
   subsites <- names(boot_dat)
   
   shuffle_samples <- lapply(boot_dat, FUN = function(x) {
@@ -325,21 +413,32 @@ FuncBootDrawsRS <- function(boot_dat, actual_dat, start_col, groups_df, combos_d
   return(boot_CIs_df)
 }
 
-FuncCorals <- function(filenam, sitesfilenam = NULL, out_prefix) {
+FuncCorals <- function(filenam, sitesfilenam = NULL, diseasefilenam, colcountsfilenam, out_prefix) {
 
 # ### IMPORT AND FORMAT DATA ----
-coral <- vroom::vroom(filenam)
-if(!is.null(sitesfilenam)) tbl_link <- vroom::vroom(sitesfilenam)
+if(!is.null(filenam)) tryCatch(coral <- vroom::vroom(filenam), error = function(e) {out_file <- NULL; print("Cannot import the selected file")})
+  
+if(!is.null(sitesfilenam)) tryCatch(tbl_link <- vroom::vroom(sitesfilenam), error = function(e) {out_file <- NULL; print("Cannot import the selected file")})
+  
+if(!is.null(diseasefilenam)) tryCatch(disease <- vroom::vroom(diseasefilenam), error = function(e) {out_file <- NULL; print("Cannot import the selected file")})
+  
+if(!is.null(colcountsfilenam)) tryCatch(colcounts <- vroom::vroom(colcountsfilenam), error = function(e) {out_file <- NULL; print("Cannot import the selected file")})
 
 # #  <<<<<<<< TESTING >>>>>>>>>>>>>> ----
-# coral <- vroom::vroom("Data_LOCAL_ONLY/BUIS_CoralVideo Summary by Transect.csv") # <- vroom::vroom("Data_LOCAL_ONLY/demo_CoralDat.csv")
-# out_prefix="test"
-# tbl_link <- vroom::vroom("Data_LOCAL_ONLY/SFCN_CoralSites.csv")
+# coral <- vroom::vroom("VIIS_test_data/VIIS_CoralVideo Summary by Transect.csv")
+# tbl_link <- vroom::vroom("VIIS_test_data/SFCN_CoralSites.csv")
+# disease <- vroom::vroom("VIIS_test_data/SFCN_Coral_VIIS_Disease.csv")
+# colcounts <- vroom::vroom("VIIS_test_data/VIIS_ColonyCount.csv")
 
 # Format columns ----
 coral$Date <- lubridate::mdy(coral$Date)
 coral %<>%
-  dplyr::rename(SurvDate = Date, Subcategory = SubCategory, Taxon = TaxonCode, CountOfTaxon = CountOfTaxonCode) %>%
+  dplyr::rename(
+    SurvDate = Date, 
+    Subcategory = SubCategory, 
+    Taxon = TaxonCode, 
+    CountOfTaxon = CountOfTaxonCode,
+    VideoCertificationLevel = CertificationLevel) %>%
   dplyr::mutate(TransectSurveyID = paste0(Site, "_", Transect, "_", SurvDate))  # create unique transect-specific EventID
 
 # If the file doesn't already have a Reporting Site column, get the information from the link table
@@ -357,67 +456,38 @@ coral$Category[coral$Category %in% c("UNKNOWN") | is.na(coral$Category)] <- "UNK
 coral$Taxon[coral$Taxon %in% c("No Taxon") | is.na(coral$Taxon)] <- "UNK"
 coral$FunctionalGroup[is.na(coral$FunctionalGroup)] <- paste(coral$Category[is.na(coral$FunctionalGroup)], "UNGROUPED", sep = "_")
 
-### POPULATE LIST OF WARNINGS ----
-warn_list <- sapply(c("AltPurp", "UNKTaxon", "BleachCode", "TransCount", "TaxonCountDiv", "TaxonCount", "EquipShadowCount", "UNKCount"), function(x) NULL)
+# Format disease data
+disease %<>% 
+  dplyr::rename(SurvDate = Date, Taxon = CoralTaxonCode, DiseaseCertificationLevel = CertificationLevel) %>%
+  dplyr::mutate(SurvDate = lubridate::mdy(SurvDate), 
+                NumOfBlemishes = as.integer(NumOfBlemishes),
+                DiscoloredTissue = as.integer(DiscoloredTissue),
+                TransectSurveyID = paste0(Site, "_", Transect, "_", SurvDate)) %>%
+  dplyr::filter(is.na(TransectDiseaseFree) | TransectDiseaseFree == FALSE) 
 
-warn_list$AltPurp <- coral %>%
-  dplyr::arrange(SurvDate) %>%
-  dplyr::select(TripName, Purpose) %>%
-  dplyr::filter(!Purpose %in% c("Annual", "Episodic")) %>%
-  distinct() %>%
-  dplyr::rename("Trip" = TripName)
+disease[, c("DiseaseCode", "Taxon")][is.na(disease[, c("DiseaseCode", "Taxon")])] <- "UNK"
 
-warn_list$UNKTaxon <- coral %>%
-  dplyr::select(TransectSurveyID, Taxon) %>%
-  dplyr::filter(Taxon == "UNK") %>%
-  dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID")
+disease$DiseaseCode[grepl("DS", disease$DiseaseCode)] <- "DS"
 
-warn_list$BleachCode <- coral %>%
-  dplyr::select(TransectSurveyID, Category, BleachingCode) %>%
-  dplyr::filter(Category != "CORAL" & !is.na(BleachingCode)) %>%
-  dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID")
+# If the file doesn't already have a Reporting Site column, get the information from the link table
+if(!"ReportingSite" %in% colnames(disease) & exists("tbl_link")) {
+  disease %<>% dplyr::left_join(tbl_link, by = c("ParkCode", "Site"))
+}
 
-warn_list$TransCount <- coral %>%
-  dplyr::select(Site, Transect, SurvDate, Purpose) %>%
-  distinct() %>%
-  dplyr::group_by(Site, SurvDate, Purpose) %>%
-  dplyr::arrange(Site, SurvDate, Purpose) %>%
-  dplyr::summarize(NumTransects = n(), .groups = "drop") %>%
-  dplyr::filter(Purpose %in% c("Annual", "Episodic") & !NumTransects %in% c(4, 20)) %>% # 'off' transect counts only matters for annual or episodic surveys
-  dplyr::mutate(SurvDate = lubridate::ymd(SurvDate)) %>% # renderTable does not play nice with dates--need to format as character
-  dplyr::rename("Survey Date" = "SurvDate")
+# Format colony counts data
+colcounts %<>%
+  dplyr::rename(SurvDate = Date, ColCountsCertificationLevel = CertificationLevel) %>%
+  dplyr::mutate(SurvDate = lubridate::mdy(SurvDate),
+                TransectSurveyID = paste0(Site, "_", Transect, "_", SurvDate)) %>% 
+  dplyr::mutate_at(c("StonyCoralCount1", "StonyCoralCount2", "FireCoralCount1", "FireCoralCount2"), as.numeric)
 
-Err_counts <- coral %>%
-  dplyr::group_by(TransectSurveyID) %>%
-  dplyr::summarize(TotPoints = sum(CountOfTaxon, na.rm=TRUE),
-            EquipShadowPoints = sum(CountOfTaxon[Category %in% c("EQUIP", "SHADOW")]),
-            UNKPoints = sum(CountOfTaxon[Category %in% c("UNK", "UNKNOWN") | is.na(Category)]), .groups = "drop")
+# If the file doesn't already have a Reporting Site column, get the information from the link table
+if(!"ReportingSite" %in% colnames(colcounts) & exists("tbl_link")) {
+  colcounts %<>% dplyr::left_join(tbl_link, by = c("ParkCode", "Site"))
+}
 
-warn_list$TaxonCountDiv <- Err_counts %>%
-  dplyr::mutate(ModOut = TotPoints %% 10) %>%
-  dplyr::filter(ModOut != 0) %>%
-  dplyr::select(TransectSurveyID, TotPoints) %>%
-  dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID", "Total Points" = TotPoints)
-
-warn_list$TaxonCount <- Err_counts %>%
-  dplyr::filter(TotPoints < 200 | TotPoints > 480) %>%
-  dplyr::select(TransectSurveyID, TotPoints) %>%
-  dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID", "Total Points" = TotPoints)
-
-warn_list$EquipShadowCount <- Err_counts %>%
-  dplyr::mutate(PercEquipShadow = (EquipShadowPoints / TotPoints)*100) %>%
-  dplyr::filter(PercEquipShadow > 5.0) %>%
-  dplyr::select(TransectSurveyID, PercEquipShadow) %>%
-  dplyr::arrange(desc(PercEquipShadow)) %>%
-  dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID", "% Equip or Shadow" = PercEquipShadow)
-
-warn_list$UNKCount <- Err_counts %>%
-  dplyr::mutate(PercUNK = (UNKPoints / TotPoints)*100) %>%
-  dplyr::filter(PercUNK > 5.0) %>%
-  dplyr::select(TransectSurveyID, PercUNK) %>%
-  dplyr::arrange(desc(PercUNK)) %>%
-  dplyr::rename("Site_Transect_SurveyDate" = "TransectSurveyID", "% Unknown" = PercUNK)
-
+# Populate list of warnings ----
+warn_list <- FuncWarnings(dat = coral, disease_dat = disease, colcounts_dat = colcounts)
 
 # Final formatting steps ----
 
@@ -429,8 +499,18 @@ coral$BleachingCode[coral$Category != "CORAL"] <- NA
 
 coral%<>%
   dplyr::filter(Purpose %in% c("Annual", "Episodic")) %>% # only include annual and episodic data
-  dplyr::select(ParkCode, ReportingSite, ReportingSiteName, Site, Transect, Latitude, Longitude, Year, SurvDate, TransectSurveyID, TripName, Purpose, IsActive, Category, Subcategory, FunctionalGroup, Taxon, BleachingCode, CountOfTaxon) %>%
+  dplyr::select(ParkCode, ReportingSite, ReportingSiteName, Site, Transect, Latitude, Longitude, Year, SurvDate, TransectSurveyID, TripName, Purpose, IsActive, Category, Subcategory, FunctionalGroup, Taxon, BleachingCode, CountOfTaxon, VideoCertificationLevel) %>%
   dplyr::arrange(Site, SurvDate, Transect)
+
+# Disease data --remove records with unknown disease code or colonies <4cm
+disease %<>%
+  dplyr::filter(is.na(ColonyLT4CM) |  ColonyLT4CM == FALSE, # get rid of records where colony < 4cm. Most of these are NA (so keeping those)
+                DiseaseCode != "UNK") %>%
+  dplyr::select(ParkCode, ReportingSite, ReportingSiteName, Site, IsActive, Transect, SurvDate, TransectSurveyID, Purpose, ProtocolVersion, ColonyNumber, LengthAlongTransect, DistanceFromTransect, DiseaseCode, DiseaseDescription, Taxon, CoralScientificName, LesionLength, LesionWidth, DiscoloredTissue, NumOfBlemishes, DiseaseCertificationLevel)
+
+# Colony counts data
+colcounts %<>% 
+  dplyr::select(ParkCode, ReportingSite, ReportingSiteName, Site, IsActive, Transect, SurvDate, TransectSurveyID, Purpose, ProtocolVersion, StonyCoralCount1, StonyCoralCount2, FireCoralCount1, FireCoralCount2, ColCountsCertificationLevel)
 
 # STOP-Error check--make sure all records have associated Reporting Site and Activity Status 
 missing_RS <- coral[is.na(coral$ReportingSite), ] %>%
@@ -561,6 +641,7 @@ incProgress(2/5, detail = paste0("...site-level coral bleaching estimates for ",
   })
 site_bleach_CIs_df <- as.data.frame(do.call("rbind", site_bleach_CIs_list))
 site_bleach_CIs_df$SurvDate <- lubridate::ymd(site_bleach_CIs_df$SurvDate)
+
 
 ## REPORTING SITE-LEVEL ESTIMATES ----
 # For each reporting site, these are the only survey dates to use for reporting site estimates (because all sites were surveyed in these years)
@@ -716,7 +797,9 @@ out_list <- list(raw_dat = coral, # the raw data include equipment and shadow co
                  warn_list = warn_list,
                  transect_counts_df = transect_counts_df,
                  cover_CIs_df = cover_CIs_df,
-                 bleach_CIs_df = bleach_CIs_df)
+                 bleach_CIs_df = bleach_CIs_df,
+                 disease_df = disease,
+                 colcounts_df = colcounts)
 saveRDS(out_list, paste0(out_prefix, "_coralsummary.RDS"))
 }
 
