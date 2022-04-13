@@ -24,7 +24,7 @@ FuncWarnings <- function(dat, disease_dat, colcounts_dat) {
   dat_accepted <- round(100* sum(dat$VideoCertificationLevel == "Accepted")/ nrow(dat))
   disease_accepted <- round(100* sum(disease_dat$DiseaseCertificationLevel == "Accepted")/nrow(disease_dat))
   colcounts_accepted <- round(100* sum(colcounts_dat$ColCountsCertificationLevel == "Accepted")/nrow(colcounts_dat))
-  warn_list$CertLevel <- data.frame(Data = c("coral video summary", "disease", "colony counts"), "%Accepted" = c(dat_accepted, disease_accepted, colcounts_accepted))
+  warn_list$CertLevel <- data.frame(Data = c("coral video summary", "disease", "colony counts"), `%Accepted` = c(dat_accepted, disease_accepted, colcounts_accepted))
   
   warn_list$AltPurp <- dat %>%
     dplyr::arrange(SurvDate) %>%

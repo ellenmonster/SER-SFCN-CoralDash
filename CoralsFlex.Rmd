@@ -16,7 +16,7 @@ rm(list=ls())
 ### Load libraries -----
 # Will automatically install any packages it can't find
 
-pkgList <- c("flexdashboard", "shiny", "knitr", "gridExtra", "shinyWidgets", "leaflet", "plotly", "DT", "rtf", "lubridate", "leaflet.minicharts", "tidyverse", "magrittr", "htmlwidgets", "RSQLite", "multidplyr", "Rcpp", "reactable", "scales")
+pkgList <- c("flexdashboard", "shiny", "knitr", "gridExtra", "cowplot", "shinyWidgets", "leaflet", "plotly", "DT", "rtf", "lubridate", "leaflet.minicharts", "tidyverse", "magrittr", "htmlwidgets", "RSQLite", "multidplyr", "Rcpp", "scales", "patchwork", "zoo")
 inst <- pkgList %in% installed.packages()
 if (length(pkgList[!inst]) > 0) {install.packages(pkgList[!inst],dep=TRUE)}
 lapply(pkgList, library, character.only = TRUE)
@@ -26,9 +26,10 @@ source("Corals.R")
 
 rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list = NULL, transect_counts_df = NULL, cover_CIs_df = NULL, bleach_CIs_df = NULL, disease_df = NULL, colcounts_df = NULL)
 
-rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, bleach_subdat = NULL, disease_prev_transect = NULL, disease_prev_site = NULL, disease_subdat = NULL)
-
-rv <- readRDS("~/NPS PROJECTS_CURRENT/SFCN_CoralDash/TEST_partial_coralsummary.RDS") # <<<<<<<<<<<<<<<<<<<< FOR TESTING ONLY
+rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_prev_subdat = NULL, disease_prev_subdat_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL)
+cat("line30")
+# 
+# rv <- readRDS("~/NPS PROJECTS_CURRENT/SFCN_CoralDash/TEST_coralsummary.RDS") # <<<<<<<<<<<<<<<<<<<< FOR TESTING ONLY
 
 tags$style("table {
            height: calc(100vh - 80px) !important;
@@ -44,14 +45,12 @@ FuncWarnTable <-function(colnam) {
   return(x_tab)
 }
 
-FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, y_text, PC_blackwhite) {
+FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, y_text, which_showRSS, PC_blackwhite) {
   # Function to generate point plots with error bars
   #
   # Args:
   #   CI_dat:  The CI data frame
   #   denom: "TransectCount" for % cover or "CategoryCount" for relative cover
-  #   combine_stations:  TRUE to combine multiple stations in a single plot of a characteristic
-  #   fixed_free_y:  Are scales fixed or free across all plots?
   #
   # Returns:
   #   List of point plots with error bars
@@ -75,15 +74,20 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, y_t
       ggplot(data = plot_dat, aes_string(x = "SurvDate", y = "EstimCov", colour = if_else(sel_splitplot == "one_loc_many_sub", "NumerLevel", "RSS"))) 
     
     if(PC_blackwhite) {
-      p <- p + scale_colour_grey()
+      p <- p + scale_colour_grey(guide = guide_legend(override.aes = list(size=2)))
     } else {
-      p <- p +
-        scale_color_manual(values = cbp1_assigned)
+      if(which_showRSS == "bleach") {
+        p <- p + 
+          scale_color_manual(values = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), guide = guide_legend(override.aes = list(size=1.25)))
+      } else { # for cover plots
+        p <- p +
+        scale_color_manual(values = cbp1_assigned, guide = guide_legend(override.aes = list(size=1.25)))
+      }
     }
   
   p <- p +
-    geom_point(aes(text = paste0("Reporting Site: ", RSS, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br># of Samples: ", N, "<br>% Cover: ", EstimCov, "<br>Lower CI: ", CI_low, "<br>Upper CI: ", CI_high))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
-    geom_line() +
+    geom_point(aes(text = paste0("Group Level: ", NumerLevel, "<br>Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br># of Transects: ", N, "<br>% Cover: ", EstimCov, "<br>Lower CI: ", CI_low, "<br>Upper CI: ", CI_high))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+    geom_line(aes(text = paste0("Group Level: ", NumerLevel, "<br>Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br># of Transects: ", N, "<br>% Cover: ", EstimCov, "<br>Lower CI: ", CI_low, "<br>Upper CI: ", CI_high)), group = if_else(sel_splitplot == "one_loc_many_sub", "NumerLevel", "RSS")) + # need to add this grouping to geom_line, otherwise the text will cause it to group incorrectly. Need to add text b/c otherwise the line will not show when plotly tooltip is set to "text"
     geom_errorbar(aes(ymin = CI_low, ymax = CI_high), width = .25)
   
   facet_vars <- switch(sel_splitplot,
@@ -96,19 +100,30 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, y_t
     scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
     facet_wrap(as.formula(facet_vars), scales = if_else(free_ymax, "free_y", "fixed"), ncol = 1) +
     theme_bw(base_size = 12) +
-    theme(legend.title = element_blank())
+    theme(legend.position = "top",
+          legend.text = element_text(size = 16),
+          legend.title = element_text(size = 16))
   
-  facet_ht <- 255 # 215
-  add_on_ht <- 80 # 150, this is for legend
+  cov_legend <- ggpubr::as_ggplot(cowplot::get_legend(p))
+      
+  facet_ht <- 250 # 215
+  add_on_ht <- 150 # 150, this is for x-axis
+  num_locs <- case_when(
+    which_showRSS == "cover" ~ length(rv_param_temp$sel_showRSS),
+    which_showRSS == "bleach" ~ length(rv_param_temp$sel_bleach_showRSS))
+  num_sub <- case_when(
+    which_showRSS == "cover" ~ length(rv_param_temp$sel_sublev),
+    which_showRSS == "bleach" ~ length(levels(dat$NumerLevel)))
+   
   page_ht <- switch(sel_splitplot,
-                    "one_loc_many_sub" = length(rv_param_temp$sel_showRSS) * facet_ht + add_on_ht,
-                    "one_sub_many_loc" = length(rv_param_temp$sel_sublev) * facet_ht + add_on_ht)
+                    "one_loc_many_sub" = num_locs * facet_ht + add_on_ht,
+                    "one_sub_many_loc" = num_sub * facet_ht + add_on_ht)
 
   gp <- ggplotly(p,
+                 tooltip = "text", # make sure only the custom text is shown on hover
                  height = page_ht) # specify the total plot height here because this layout will be applied to the entire page
   
   gp <- gp %>% layout(
-    legend = list(orientation = "h", xanchor = "center", yanchor = "bottom", y = 1.03, x = 0.5, yref = "plot"),
     margin = list(
       t=80,
       b=70,
@@ -118,68 +133,178 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, y_t
   gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.12 # move y-axis title more to the left
   gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.02 # move x-axis title down more. This affects the x-axis title specified in ggplot
   
-  return(gp)
+  return_list <- list(plot = gp, legend = cov_legend)
+  
+  return(return_list)
+}
+
+FuncPlotPointDisease <- function(dat, metric, free_ymax, y_text, disease_by_transect) {
+  # Function to generate point plots for disease counts and prevalence
+  #
+  # Args:
+  #   dat:  The disease data frame (either site- or transect-level prevalence)
+  #
+  # Returns:
+  #   List of point plots
+  # 
+  
+  # Colorblind-friendly palette
+
+  plot_dat <- dat %>%
+    dplyr::mutate(PlotMetric = get(metric))
+  
+  if(disease_by_transect == TRUE){ # if separate line for each transect...
+    p <- 
+      ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric, colour = Transect)) +
+      scale_color_viridis_d(name = metric, direction=-1, guide = guide_legend(override.aes = list(size=1.25))) +
+      geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", TransectDiseased, "<br>Number of Colonies: ", StonyCoralCount1, "<br>Disease Prevalence: ", TransectPrev))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+    geom_line(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", TransectDiseased, "<br>Number of Colonies: ", StonyCoralCount1, "<br>Disease Prevalence: ", TransectPrev)), group = "Transect") # need to add this grouping to geom_line, otherwise the text will cause it to group incorrectly. Need to add text b/c otherwise the line will not show when plotly tooltip is set to "text"
+  } else {
+    p <- 
+      ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric)) +
+      geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", SiteDiseased, "<br>Number of Colonies: ", SiteStonyCoralCount1, "<br>Disease Prevalence: ", SitePrev))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+      geom_line(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", SiteDiseased, "<br>Number of Colonies: ", SiteStonyCoralCount1, "<br>Disease Prevalence: ", SitePrev)), group = "RSS")
+    
+  }
+  
+  p <- p +
+    expand_limits(y = c(0, 0)) + # y-axes must include 0
+    labs(x = "Year", y = y_text) +
+    scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
+    facet_wrap(~RSS, scales = if_else(free_ymax, "free_y", "fixed"), ncol = 1) +
+    theme_bw(base_size = 12)
+  
+  if(disease_by_transect == TRUE) {
+    p <- p + 
+      theme(legend.position = "top",
+            legend.text = element_text(size = 16),
+            legend.title = element_text(size = 16)
+      )
+    disease_legend <- ggpubr::as_ggplot(cowplot::get_legend(p))
+            
+  } else {
+    disease_legend <- NA
+  }
+  
+  facet_ht <- 250 # 215
+  add_on_ht <- 150 # 150, this is for x-axis
+
+   
+  page_ht <- length(unique(plot_dat$RSS)) * facet_ht + add_on_ht
+
+  gp <- ggplotly(p,
+                 tooltip = "text", # make sure only the custom text is shown on hover
+                 height = page_ht) # specify the total plot height here because this layout will be applied to the entire page
+  
+  gp <- gp %>% layout(
+    margin = list(
+      t=80,
+      b=70,
+      l= 100,
+      r=15))
+  
+  gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.12 # move y-axis title more to the left
+  gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.02 # move x-axis title down more. This affects the x-axis title specified in ggplot
+  
+  return_list <- list(plot = gp, legend = disease_legend)
+  
+  return(return_list)
 }
 
 FuncPlotBleach <- function(dat, yaxis_title) {
-  ggplot(dat, aes(x = SurvDate, y = EstimCov, fill = NumerLevel)) +
+  # NOT interactive because with interactive subplots of facet plots, the y-axis was not showing in the correct location 
+  # Function to stacked bar plots of site totals
+  #
+  # Args:
+  #   dat:  The bleach data frame
+  #
+  # Returns:
+  #   Stacked bar plots
+  # 
+  
+  yr_levels = min(dat$Year, na.rm = TRUE):max(dat$Year, na.rm = TRUE)
+  plot_dat <- dat %>%
+    dplyr::mutate(SurvDate = as.factor(SurvDate),
+                  Year = as.factor(Year))
+  
+  plots_list <- lapply(sort(unique(dat$RSS)), function(i) {
+    
+    ggplot(subset(plot_dat, RSS == i), aes(x = SurvDate, y = EstimCov, fill = NumerLevel)) +
     geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
-    scale_fill_manual(values = c("NoData" = "yellow", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92")) +
+    scale_fill_manual(values = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), guide = "none") +
     scale_y_continuous(expand = c(0, 0)) +
-    labs(y = yaxis_title, subtitle = "For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)") +
-    theme_bw(base_size = 12) +
-    # facet_grid(. ~ Year, scales = "free_x", switch = "x") +
-    facet_grid(. ~ Year, scales = "free_x") +
-    theme(legend.title = element_blank(),
+    labs(title = " ", subtitle = paste0("Coral Bleaching at Site:  ", i), y = yaxis_title) + # adding blank title as hack to increase spacing between plots
+    theme_bw(base_size = 14) +
+    facet_grid(.~Year, scales = "free_x", drop = FALSE, switch = "x") +
+    theme(legend.position = "none",
+          plot.subtitle = element_text(size = 18),
           axis.text.x=element_blank(),
           axis.title.x=element_blank(),
           axis.ticks.x = element_blank(),
           axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
-          strip.text.x = element_text(size = 11),
+          strip.text.x = element_text(size = 11, angle = 90),
           strip.background=element_blank(),
           panel.border = element_blank(),
           panel.grid = element_blank(),
-          panel.spacing = unit(-0.05, "lines"))
+          panel.spacing = unit(0.05, "lines"))
+  })
+  
+  plots_page <- patchwork::wrap_plots(plots_list, ncol = 1) +
+    patchwork::plot_annotation(
+      title = "For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)",
+      theme = theme(
+        plot.title = element_text(size = 16)
+      ))
+
+    return(plots_page)
 }
 
-FuncPlotDiseaseTransect <- function(dat, y_col, yaxis_title, subtitle_text) {
-  ggplot(dat, aes_string(x = "SurvDate", y = y_col, fill = "DiseaseStatus")) +
-    geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
-    scale_fill_manual(values = c("Diseased" = "red", "NotDiseased" = "black", "Unknown" = "yellow")) +
-    # scale_y_continuous(expand = c(0, 0)) +
-    labs(y = yaxis_title, subtitle = subtitle_text) +
-    theme_bw(base_size = 12) +
-    facet_wrap(vars(Site_Transect)) +
-    theme(legend.title = element_blank(),
+FuncPlotDisease <- function(dat, y_col, yaxis_title, title_text) {
+  # NOT interactive because with interactive subplots of facet plots, the y-axis was not showing in the correct location 
+  # Function to stacked bar plots of site totals
+  #
+  # Args:
+  #   dat:  The bleach data frame
+  #
+  # Returns:
+  #   Stacked bar plots
+  # 
+  
+  yr_levels = min(dat$Year, na.rm = TRUE):max(dat$Year, na.rm = TRUE)
+  plot_dat <- dat %>%
+    dplyr::mutate(SurvDate = as.factor(SurvDate),
+                  Year = as.factor(Year))
+  
+  plots_list <- lapply(sort(unique(dat$RSS)), function(i) {
+    
+    ggplot(subset(plot_dat, RSS == i), aes_string(x = "SurvDate", y = y_col, fill = "DiseaseStatus")) +
+      geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
+      scale_fill_manual(values = c("Diseased" = "red", "NotDiseased" = "black", "Unknown" = "yellow"), guide = "none") +
+    scale_y_continuous(expand = c(0, 0)) +
+    labs(title = " ", subtitle = paste0("Coral Disease at Site:  ", i), y = yaxis_title) +
+    theme_bw(base_size = 14) +
+    facet_grid(. ~ Year, scales = "free_x", drop = FALSE, switch = "x") +
+    theme(legend.position = "none",
+          plot.subtitle = element_text(size = 18),
           axis.text.x=element_blank(),
           axis.title.x=element_blank(),
           axis.ticks.x = element_blank(),
           axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
-          strip.text.x = element_text(size = 11),
+          strip.text.x = element_text(size = 11, angle = 90),
           strip.background=element_blank(),
           panel.border = element_blank(),
           panel.grid = element_blank(),
           panel.spacing = unit(-0.05, "lines"))
-}
-
-FuncPlotDiseaseSite <- function(dat, y_col, yaxis_title, subtitle_text) {
-  ggplot(dat, aes_string(x = "SurvDate", y = y_col, fill = "DiseaseStatus")) +
-    geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
-    scale_fill_manual(values = c("Diseased" = "red", "NotDiseased" = "black", "Unknown" = "yellow")) +
-    # scale_y_continuous(expand = c(0, 0)) +
-    labs(y = yaxis_title, subtitle = subtitle_text) +
-    theme_bw(base_size = 12) +
-    facet_grid(. ~ Year, scales = "free_x", switch = "x") +
-    theme(legend.title = element_blank(),
-          axis.text.x=element_blank(),
-          axis.title.x=element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
-          strip.text.x = element_text(size = 11),
-          strip.background=element_blank(),
-          panel.border = element_blank(),
-          panel.grid = element_blank(),
-          panel.spacing = unit(-0.05, "lines"))
+    })
+  
+  plots_page <- patchwork::wrap_plots(plots_list, ncol = 1) +
+    patchwork::plot_annotation(
+      title = title_text,
+      theme = theme(
+        plot.title = element_text(size = 16)
+      ))
+  
+  return(plots_page)
 }
 ```
 
@@ -204,7 +329,7 @@ observeEvent(eventExpr = input$button_import, {
   withProgress(message = "Please be patient. Calculating something wonderful...", value = 0, {
     FuncCorals(filenam = input$filenam$datapath, sitesfilenam = input$sitesfilenam$datapath, diseasefilenam = input$diseasefilenam$datapath, colcountsfilenam = input$colcountsfilenam$datapath, out_prefix = input$out_prefix)
     
-    rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, bleach_subdat = NULL, disease_prev_transect = NULL, disease_prev_site = NULL, disease_subdat = NULL)
+    rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_prev_subdat = NULL, disease_prev_subdat_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL)
     
      showModal(modalDialog(
         title = "Done",
@@ -216,20 +341,20 @@ observeEvent(eventExpr = input$button_import, {
 
 ```{r action_load_RDS}
 observeEvent(eventExpr = input$summaryfile, {
-  cat("line200")
+ 
   tryCatch(out <- readRDS(input$summaryfile$datapath),
              error = function(e) {out_file <- NULL; print("Cannot import the selected file")})
   
   out <- readRDS(input$summaryfile$datapath)
   
   shiny::validate(need(all(names(out) %in% names(rv)), message = paste0("DATA PROCESSING ERROR: The loaded file needs to have these and only these list elements: ", paste(names(rv), collapse = ", "), ". Please try with another file.")))
- cat("line204")
+
   rv <- sapply(names(out), FUN = function(i) {rv[[i]] <- out[[i]]}, simplify = FALSE)
   
-  rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, bleach_subdat = NULL, disease_prev_transect = NULL, disease_prev_site = NULL, disease_subdat = NULL)
+  rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_prev_subdat = NULL, disease_prev_subdat_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL)
 
-  Sys.sleep(0.25)
-  cat("line210")
+  Sys.sleep(0.75)
+ 
   showModal(modalDialog(
   title = "Done",
   "You may now navigate to the other tabs for summary graphs and tables"
@@ -261,20 +386,25 @@ observeEvent(eventExpr = input$sublev_esa_button, {
   })
 ```
 
-```{r action_button_export_PC}
-observeEvent(eventExpr = input$button_export_PC, {
-  shiny::req(!is.null(rv_param_temp$cover_subdat))
-    dat_export <- rv_param_temp$cover_subdat 
-    colnames(dat_export)[colnames(dat_export)=="y_val"] <- "Mean"
-    colnames(dat_export)[colnames(dat_export)=="y_low"] <- paste0(input$sel_error, "_low")
-    colnames(dat_export)[colnames(dat_export)=="y_high"] <- paste0(input$sel_error, "_high")
+```{r action_button_update_transect_cover}
+# Action to update transect-level cover summaries with current user inputs
+observeEvent(eventExpr = input$button_update_transect_cover, {
+  shiny::req(!is.null(input$sel_raw_sitescale), !is.null(input$sel_raw_showRSS), !is.null(input$sel_raw_categ), !is.null(input$sel_raw_episodic), !is.null(rv$transect_counts_df))
   
-    write.csv(dat_export, "corals_perccov.csv", row.names = FALSE)
-    showModal(modalDialog(
-    title = "Done",
-    paste0("The data have been saved as corals_perccov.csv in the current working directory, ", getwd())
-    )
-    )
+  rv_param_temp$sel_raw_dates <- rv_param_temp$transects_subdat <- NULL
+  rv_param_temp$transects_subdat <- rv$raw_dat %>%
+    dplyr::select(-Subcategory, -FunctionalGroup, -Taxon, -BleachingCode, -CountOfTaxon) %>%
+    dplyr::mutate(RSS = get(input$sel_raw_sitescale),
+                  Site_Transect = paste(Site, Transect, sep = "_")) %>%
+    dplyr::filter(
+      RSS == input$sel_raw_showRSS,
+      Category == input$sel_raw_categ,
+      if(input$sel_raw_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
+    dplyr::distinct() %>%
+    dplyr::left_join(rv$transect_counts_df, by = c("TransectSurveyID", "Category")) %>%
+    dplyr::mutate(Transect = factor(Transect))
+  
+  rv_param_temp$sel_raw_dates <- input$sel_raw_dates
 })
 ```
 
@@ -286,6 +416,8 @@ observeEvent(eventExpr = input$button_update_cover, {
   
   if(input$sel_lev != "Category") {shiny::validate(need(!is.null(input$sel_sublev), message = "Please select at least one sublevel, then press the green 'UPDATE COVER SUMMARIES' button"))}
  
+  rv_param_temp$cover_plot <- NULL
+  
   cover_subdat <- rv$cover_CIs_df %>%
     dplyr::filter(
       RSS %in% input$sel_showRSS,
@@ -302,26 +434,31 @@ observeEvent(eventExpr = input$button_update_cover, {
   rv_param_temp$sel_lev <- input$sel_lev
   rv_param_temp$sel_sublev <- input$sel_sublev
 
-  shinyjs::hideElement("wp_cover_criteria")
+  # shinyjs::hideElement("wp_cover_criteria")
 })
 ```
 
-```{r export_cover_table}
-observeEvent(eventExpr = input$rtf_button, {
-  rtffile <- rtf::RTF(paste0(input$sel_tabsite, "_", input$sel_tabsurv, ".doc"), width = 11, height = 8.5, font.size = 10, omi = c(1, 0.5, 1, 0.5))
-  rtf::addHeader(rtffile, title = paste0(input$sel_tabsite, " (", input$sel_tabsurv, ")"), subtitle = "Point Counts", font.size = 14)
-  rtf::addTable(rtffile, data_point(), col.justify = "C", header.col.justify = "C", row.names = TRUE)
-  rtf::addPageBreak(rtffile, width = 10, height = 8.5, omi = c(1, 0.5, 1, 0.5))
-  rtf::addHeader(rtffile, title = paste0(input$sel_tabsite, " (", input$sel_tabsurv, ")"), subtitle = "% Cover", font.size = 14)
-  rtf::addTable(rtffile, data_perccov(), col.justify = "C", header.col.justify = "C", row.names = TRUE)
-  rtf::done(rtffile)
-  showModal(modalDialog(
-    title = "Done",
-    paste0("The tables have been saved as ", input$sel_tabsite, "_", input$sel_tabsurv, ".doc in the current working directory, ", getwd())
-  ))
+```{r action_button_update_bleach}
+# Action to update bleach summaries with current user inputs
+observeEvent(eventExpr = input$button_update_bleach, {
+
+  shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$sel_bleach_sitescale), !is.null(input$sel_bleach_showRSS), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_error))
+  
+  rv_param_temp$sel_bleach_showRSS <- rv_param_temp$bleach_plot <- NULL
+  
+  rv_param_temp$bleach_subdat <- rv$bleach_CIs_df %>%
+    dplyr::filter(
+      RSS %in% input$sel_bleach_showRSS,
+      if(input$sel_bleach_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
+    dplyr::mutate(
+      Year = lubridate::year(SurvDate), # for stacked bar plots
+      NumerLevel = factor(NumerLevel, levels = c("NONCORAL", "NoData", "UNBL", "BL1", "BL2", "BL3", "BL4"))) %>%
+    arrange(RSS, SurvDate, NumerLevel)
+  
+  rv_param_temp$sel_bleach_showRSS <- input$sel_bleach_showRSS # make sure user selection doesn't automatically update plot page height
 })
 ```
- 
+
 ```{r action_buttons_select_diseases}
 observeEvent(eventExpr = input$disease_all_button, {
   shiny::req(!is.null(rv_param_temp$avail_diseases))
@@ -351,30 +488,29 @@ observeEvent(eventExpr = input$button_update_disease, {
   shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(input$sel_disease_sitescale), !is.null(input$sel_disease_showRSS), !is.null(input$sel_disease_episodic), !is.null(input$sel_diseases))
 
   diseases <- rv$disease_df %>%
-    dplyr::rename(RSS = input$sel_disease_sitescale) %>%
-    dplyr::mutate(DiseaseFull = paste0(DiseaseDescription, " (", DiseaseCode, ")"),
-                  TaxonFull = paste0(CoralScientificName, " (", Taxon, ")")) %>%
+    dplyr::mutate(
+      RSS = get(input$sel_disease_sitescale),
+      DiseaseFull = paste0(DiseaseDescription, " (", DiseaseCode, ")"),
+      TaxonFull = paste0(CoralScientificName, " (", Taxon, ")")) %>%
     dplyr::filter(
       RSS %in% input$sel_disease_showRSS,
-      DiseaseCode %in% input$sel_diseases)
- 
-  # Remove episodic data
-  if(input$sel_disease_episodic == FALSE) { 
-    diseases %<>% filter(Purpose == "Annual")
-  }
+      DiseaseCode %in% input$sel_diseases,
+      if(input$sel_disease_episodic == FALSE) Purpose == "Annual" else TRUE)
   
   # Filter colony counts data for the user-specified site
    master_counts <- rv$colcounts_df %>%
      dplyr::mutate(RSS = get(input$sel_disease_sitescale)) %>%
      dplyr::filter(RSS %in% input$sel_disease_showRSS) %>%
-     dplyr::mutate(Site_Transect = paste(Site, Transect, sep = "_"))
+     dplyr::mutate(Site_Transect = paste(Site, Transect, sep = "_"),
+                   StonyCoralCountDIFF = StonyCoralCount2 - StonyCoralCount1,
+                   FireCoralCountDIFF = FireCoralCount2 - FireCoralCount1)
    
    # Disease data with associated colony numbers
    disease_cols_complete <- diseases %>%
      dplyr::select(TransectSurveyID, ColonyNumber, DiseaseFull, TaxonFull) %>%
      dplyr::filter(complete.cases(.))
    
-   # Transect-level disease counts and prevalence, per survey event
+   # Transect-level disease counts and prevalence, per survey event (in case it's useful to see the data by transect)
    disease_prev_transect <- disease_cols_complete %>%
      dplyr::select(TransectSurveyID, ColonyNumber) %>%
      dplyr::distinct() %>%
@@ -387,27 +523,30 @@ observeEvent(eventExpr = input$button_update_disease, {
      dplyr::mutate(
        Year = lubridate::year(SurvDate),
        TransectNotDiseased = StonyCoralCount1 - TransectDiseased,
-       TransectPrev = TransectDiseased / StonyCoralCount1
+       TransectPrev = round(100* (TransectDiseased / StonyCoralCount1), 1)
        ) %>%
      ungroup()
    
    # Site-level disease counts and prevalence (summed across transects for a survey event)
-   disease_prev_site <- disease_prev_transect %>%
+   disease_prev_subdat <- disease_prev_transect %>%
      dplyr::select(-TransectSurveyID, -Transect) %>%
-     dplyr::group_by(across(c(-Site_Transect, -TransectDiseased, -TransectNotDiseased, -StonyCoralCount1, -StonyCoralCount2, -FireCoralCount1, -FireCoralCount2, -TransectPrev))) %>%
+     dplyr::group_by(across(c(-Site_Transect, -TransectDiseased, -TransectNotDiseased, -StonyCoralCount1, -StonyCoralCount2, -StonyCoralCountDIFF, -FireCoralCount1, -FireCoralCount2, -FireCoralCountDIFF, -TransectPrev))) %>%
      dplyr::summarize(
        SiteDiseased = sum(TransectDiseased),
        SiteNotDiseased = sum(TransectNotDiseased),
-       SiteCoralCount1 = sum(StonyCoralCount1),
-       SiteCoralCount2 = sum(StonyCoralCount2),
+       SiteStonyCoralCount1 = sum(StonyCoralCount1),
+       SiteStonyCoralCount2 = sum(StonyCoralCount2),
+       SiteStonyCoralCountDIFF = SiteStonyCoralCount2 - SiteStonyCoralCount1,
        SiteFireCoralCount1 = sum(FireCoralCount1),
        SiteFireCoralCount2 = sum(FireCoralCount2),
-       SitePrev = round(SiteDiseased / SiteCoralCount1, 3), 
+       SiteFireCoralCountDIFF = SiteFireCoralCount2 - SiteFireCoralCount1,
+       SitePrev = round(100* (SiteDiseased / SiteStonyCoralCount1), 1), 
        ) %>% 
      ungroup()
   
-   rv_param_temp$disease_prev_transect <- disease_prev_transect
-   rv_param_temp$disease_prev_site <- disease_prev_site
+   rv_param_temp$sel_disease_showRSS <- input$sel_disease_showRSS
+   rv_param_temp$disease_prev_subdat <- disease_prev_subdat
+   rv_param_temp$disease_prev_subdat_transect <- disease_prev_transect
    })
 ```
 
@@ -477,9 +616,8 @@ Column
 *(All data are included regardless of certification level)*
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "CertLevel")
-  # validate(need(!is.null(warn_list$CertLevel), message = FALSE))
-  # rv$warn_list$CertLevel
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ``` 
@@ -489,23 +627,8 @@ br()
 *(These data are excluded from analyses)*
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "AltPurp")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # AltPurp <- rv$warn_list$AltPurp
-  # validate(need(nrow(AltPurp) > 0, "No warnings to show"))
-  # AltPurp
-  }, align = "c", na = "--", include.rownames = FALSE)
-br()
-```
-
-**SURVEY TRIPS WITH MISSING TAXON CODES OR RECORDED AS "NO TAXON"**
-```{r}
-renderTable({
-  FuncWarnTable(colnam = "UNKTaxon")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # NoTaxon <- rv$warn_list$UNKTaxon
-  # validate(need(nrow(NoTaxon) > 0, "No warnings to show"))
-  # NoTaxon
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -514,11 +637,8 @@ br()
 *(These data are excluded from bleaching analyses)*
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "BleachCode")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # BleachCode <- rv$warn_list$BleachCode
-  # validate(need(nrow(BleachCode) > 0, "No warnings to show"))
-  # BleachCode
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -527,6 +647,7 @@ br()
 ```{r}
 renderTable({
   validate(need(!is.null(rv$warn_list), message = FALSE))
+
   TransCount <- rv$warn_list$TransCount
   validate(need(nrow(TransCount) > 0, "No warnings to show"))
   TransCount$`Survey Date` <- as.character(lubridate::ymd(TransCount$`Survey Date`)) # renderTable does not play nice with dates--need to format as character
@@ -538,11 +659,8 @@ br()
 **TRANSECT SURVEYS WITH TOTAL TAXON COUNTS NOT DIVISIBLE BY 10**
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "TaxonCountDiv")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # TaxonCountDiv <- rv$warn_list$TaxonCountDiv
-  # validate(need(nrow(TaxonCountDiv) > 0, "No warnings to show"))
-  # TaxonCountDiv
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -550,11 +668,8 @@ br()
 **TRANSECT SURVEYS WITH TOTAL TAXON COUNTS LESS THAN 200 OR GREATER THAN 480**
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "TaxonCount")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # TaxonCount <- rv$warn_list$TaxonCount
-  # validate(need(nrow(TaxonCount) > 0, "No warnings to show"))
-  # TaxonCount
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -562,11 +677,8 @@ br()
 **TRANSECT SURVEYS WITH EQUIPMENT OR SHADOW HITS EXCEEDING 5% OF TOTAL TAXON COUNTS**
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "EquipShadowCount")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # EquipShadowCount <- rv$warn_list$EquipShadowCount
-  # validate(need(nrow(EquipShadowCount) > 0, "No warnings to show"))
-  # EquipShadowCount
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -574,11 +686,8 @@ br()
 **TRANSECT SURVEYS WITH UNKNOWN ("UNK") HITS EXCEEDING 5% OF TOTAL TAXON COUNTS**
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "UNKCount")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # UNKCount <- rv$warn_list$UNKCount
-  # validate(need(nrow(UNKCount) > 0, "No warnings to show"))
-  # UNKCount
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -587,11 +696,8 @@ br()
 *(These data are excluded from analyses)*
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "UNKDisease")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # UNKDisease <- rv$warn_list$UNKDisease
-  # validate(need(nrow(UNKDisease) > 0, "No warnings to show"))
-  # UNKDisease
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -600,11 +706,8 @@ br()
 *(These data are excluded from analyses)*
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "DiseaseColLT4CM")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # DiseaseColLT4CM <- rv$warn_list$DiseaseColLT4CM
-  # validate(need(nrow(DiseaseColLT4CM) > 0, "No warnings to show"))
-  # DiseaseColLT4CM
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -613,11 +716,8 @@ br()
 *(These data are still presented in disease summaries)*
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "UnmatchedDiseaseID")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # UnmatchedDiseaseID <- rv$warn_list$UnmatchedDiseaseID
-  # validate(need(nrow(UnmatchedDiseaseID) > 0, "No warnings to show"))
-  # UnmatchedDiseaseID
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -626,11 +726,8 @@ br()
 *(These data are still presented in disease summaries, if corresponding disease data are available)*
 ```{r}
 renderTable({
+  shiny::req(!is.null(rv$warn_list))
   FuncWarnTable(colnam = "UnmatchedColCountsID")
-  # validate(need(!is.null(rv$warn_list), message = FALSE))
-  # UnmatchedColCountsID <- rv$warn_list$UnmatchedColCountsID
-  # validate(need(nrow(UnmatchedColCountsID) > 0, "No warnings to show"))
-  # UnmatchedColCountsID
   }, align = "c", na = "--", include.rownames = FALSE)
 br()
 ```
@@ -694,7 +791,7 @@ wellPanel(
   
   renderUI({
     shiny::req(!is.null(rv$raw_dat), !is.null(input$sel_raw_sitescale), !is.null(input$sel_raw_showRSS), !is.null(input$sel_raw_categ), !is.null(input$sel_raw_episodic))
-    
+cat("line795")
     date_opts <- rv$raw_dat %>%
       dplyr::mutate(RSS = get(input$sel_raw_sitescale)) %>%
       dplyr::filter(
@@ -703,18 +800,34 @@ wellPanel(
         if(input$sel_raw_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
       dplyr::pull(SurvDate) %>%
       as.character()
+   
+    # select_opts <- c(
+    #               switch(all(!is.null(input$sel_raw_dates[[1]]),  input$sel_raw_dates[[1]]>=min(date_opts, na.rm = TRUE))+1, min(date_opts, na.rm = TRUE), input$sel_raw_dates[[1]]),
+    #               switch(all(!is.null(input$sel_raw_dates[[2]]), input$sel_raw_dates[[2]]<=max(date_opts, na.rm = TRUE))+1, max(date_opts, na.rm = TRUE), input$sel_raw_dates[[2]])
+                # )
     sliderTextInput("sel_raw_dates",
                 label = "Compare % cover for two survey events (red lines on plots)",
                 choices = date_opts,
                 selected = c(min(date_opts, na.rm = TRUE), max(date_opts, na.rm = TRUE))
     )
-  })
+  }),
+  
+  br(),
+  
+  br(),
+    
+  actionButton("button_update_transect_cover", "UPDATE TRANSECT SUMMARIES", class = "green-action-button")
 
 ) # end of 'wp_raw_criteria'
 ```
 
 % Cover per Transect
 -------------------------------------
+#### <font size="3">**These line graphs show % cover of the selected category (e.g., CORAL) in each transect of the selected site. The corresponding table shows % cover values for two user-selected survey dates (red vertical lines in line graphs).**</font>
+
+* % cover is calculated from the survey data, without estimates of statistical error.
+
+* In the table column "Change in %Cover", table cells are colored orange for negative values (decrease in % cover from first to second date) and blue for positive values (increase in % cover from first to second date).
 
 <h3>% Cover per Transect for Selected Category and Site</h3>
 
@@ -722,71 +835,80 @@ wellPanel(
 
 ```{r plot_transects}
 
-output$out_transects_plot <- plotly::renderPlotly({
-  shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
-
-    shiny::req(!is.null(rv$raw_dat), !is.null(input$sel_raw_episodic), !is.null(input$sel_raw_showRSS), !is.null(input$sel_raw_sitescale), !is.null(input$sel_raw_categ), !is.null(rv$transect_counts_df), !is.null(input$sel_raw_dates))
-
-  # Data to display in plots and table
-  rv_param_temp$transects_subdat <- rv$raw_dat %>%
-    dplyr::select(-Subcategory, -FunctionalGroup, -Taxon, -BleachingCode, -CountOfTaxon) %>%
-    dplyr::mutate(RSS = get(input$sel_raw_sitescale),
-                  Site_Transect = paste(Site, Transect, sep = "_")) %>%
-    dplyr::filter(
-      RSS == input$sel_raw_showRSS,
-      Category == input$sel_raw_categ,
-      if(input$sel_raw_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
-    dplyr::distinct() %>%
-    dplyr::left_join(rv$transect_counts_df, by = c("TransectSurveyID", "Category"))
+output$out_transects_plotly <- plotly::renderPlotly({
   
+  shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
+  shiny::validate(need(!is.null(rv_param_temp$transects_subdat), message = "Make selections from 'Data Filter Options' on the left, then press the green 'UPDATE TRANSECT SUMMARIES' button"))
+
+  shiny::req(!is.null(rv$transect_counts_df), !is.null(rv_param_temp$sel_raw_dates))
+ 
   p <- ggplot(rv_param_temp$transects_subdat, aes(x = SurvDate, y = PercCov)) +
-    labs(title = paste0("% Cover per Transect for ", toupper(input$sel_raw_categ), " at ", input$sel_raw_showRSS)) +
+    labs(title = paste0("% Cover per Transect for ", toupper(unique(rv_param_temp$transects_subdat$Category)), " at ", unique(rv_param_temp$transects_subdat$RSS))) +
     geom_point() +
     geom_line() +
-    geom_vline(xintercept = as.numeric(as.Date(input$sel_raw_dates)), color = "red") +
+    geom_vline(xintercept = as.numeric(as.Date(rv_param_temp$sel_raw_dates)), color = "red") +
     theme_bw() +
     facet_wrap(vars(Site_Transect))
   ggplotly(p)
   })
 
-tags$style("#out_transects_plot{height:100vh;overflow-x:scroll;overflow-y:scroll}")
-plotlyOutput('out_transects_plot', height="100%", width = "100%")
+tags$style("#out_transects_plotly{overflow-x:scroll;overflow-y:scroll}")
+plotlyOutput("out_transects_plotly")
 ```
 
 ### 
 
 ```{r}
-output$out_compare_tab <- DT::renderDT({
-  shiny::req(!is.null(rv_param_temp$transects_subdat), !is.null(input$sel_raw_dates))
-  shiny::req(length(unique(input$sel_raw_dates)) == 2)
+output$out_transects_tab <- DT::renderDT({
+  
+  shiny::req(!is.null(rv_param_temp$transects_subdat), !is.null(rv_param_temp$sel_raw_dates))
+  shiny::req(length(unique(rv_param_temp$sel_raw_dates)) == 2)
 
   compare_dat <- rv_param_temp$transects_subdat %>%
     dplyr::select(ReportingSite, Site, Transect, SurvDate, PercCov) %>%
     dplyr::mutate(SurvDate = as.character(SurvDate)) %>%
-  dplyr::filter(SurvDate %in% input$sel_raw_dates)  %>%
-  tidyr::pivot_wider(names_from = SurvDate, values_from = PercCov, names_prefix = "%Cover on ")
-
-  compare_dat$`Change in %Cover` = compare_dat[5] - compare_dat[4]
+    dplyr::filter(SurvDate %in% rv_param_temp$sel_raw_dates)  %>%
+    tidyr::pivot_wider(names_from = SurvDate, values_from = PercCov, names_prefix = "%Cover on ")
+  if(ncol(compare_dat) == 5){
+    compare_dat$`Change in %Cover` = round(compare_dat[[5]] - compare_dat[[4]], 1)
+  } else {
+    compare_dat$`Change in %Cover` = NA
+  }
+  
+  shiny::req(!is.null(compare_dat))
+  num_incr <- sum(compare_dat$`Change in %Cover` > 0, na.rm = TRUE) 
+  num_transects <- length(unique(compare_dat$Transect))
+  perc_incr <- round(100*(num_incr/num_transects), 1)
   
   DT::datatable(
     compare_dat,
+    filter = "top",
     class="compact stripe",
+    caption = htmltools::tags$caption(
+    style = 'caption-side: top; text-align: center; color:blue;',
+    htmltools::h2(paste0(toupper(unique(rv_param_temp$transects_subdat$Category)), " increased at ", num_incr, " of ", num_transects, " transects (", perc_incr, "%) from ", zoo::as.yearmon(rv_param_temp$sel_raw_dates[[1]]), " to ", zoo::as.yearmon(rv_param_temp$sel_raw_dates[[2]])))),
     rownames= FALSE,
+    extensions=c('Buttons'),
     options = list(
       pageLength = 20,
+      scrollX = TRUE,
       autoWidth = TRUE,
-      dom = 'Bfrtip',
-      buttons = c('copy', 'csv', 'excel', 'pdf'),
+      dom = 'Blrtip', # removed 'f', which is the global filter
+      buttons = c('copy', 'csv', 'excel'),
       columnDefs = list(list(className = 'dt_center', targets = "_all"))
       )
+  ) %>% formatStyle("Change in %Cover",
+                    backgroundColor  = styleInterval(c(0), c("orange", "lightblue"))
   )
 })
 
-dataTableOutput("out_compare_tab")
-tags$style("#out_compare_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+tags$style("#out_transects_tab{overflow-x:scroll;overflow-y:scroll}")
+dataTableOutput("out_transects_tab")
+
 ```
 
-% Cover and Relative Cover (figs) {data-navmenu="Group Cover per Site"}
+% Cover and Relative Cover (line graphs w/error bars) {data-navmenu="Group Cover per Site"}
 ======================================  
 Inputs {.sidebar data-width=300}
 -------------------------------------
@@ -845,8 +967,9 @@ wellPanel(
   
   renderUI({ # if estimating cover for a level other than Category, restrict summaries to a single Category
     shiny::req(!is.null(rv$cover_CIs_df), !is.null(input$sel_lev), !is.null(input$sel_showRSS))
+    cat("line925")
     shiny::req(input$sel_lev != "Category")
-    
+    cat("line926")
     avail_categ <- sort(unique(rv$cover_CIs_df$Category[rv$cover_CIs_df$NumerGroup==input$sel_lev & rv$cover_CIs_df$RSS %in% input$sel_showRSS]))
     
     selectInput("sel_categ",
@@ -892,13 +1015,7 @@ wellPanel(
   
   br(),
     
-  actionButton("button_update_cover", "UPDATE COVER SUMMARIES", class = "green-action-button"),
-  
-  br(),
-  
-  br(),
-  
-  actionButton("button_export_PC", "Export Plot Data", class = "blue-action-button")
+  actionButton("button_update_cover", "UPDATE COVER SUMMARIES", class = "green-action-button")
 ) # end of 'wp_cover_criteria'
 ```
  
@@ -930,19 +1047,29 @@ checkboxInput("free_ymax", label = "Allow y-axes scales to vary among plots", va
 
 ```
 
-% Cover & Relative Cover per Site
+% Cover and Relative Cover per Site
 -------------------------------------
+#### <font size="3">**These line graphs show mean transect % cover (left-side panel) and relative % cover (right-side panel) for each selected site and category/functional group/taxon level**</font>
+
+* Relative % cover is calculated relative to the category (e.g., CORAL)
+
+* Confidence intervals are bootstrapped. For a NORMALLY distributed characteristic, the 68% CI is equal to the mean cover estimate +/- 1 standard error.
+
 ####
-```{r seasonal_plots_legend}
-### >>>>>>>>>>>> PICK UP FROM HERE--1. create shared legend and remove legend from plots--also switch to subplots; convert all data tables to nested reactables and fix col widths--OR check data tbl widths with navbars; fix bleach plots to match cover plots as well; change transect plot name; add disease data to maps; fix explanatory text for all reactables; add informational text to sidebars; make better disease transect-level plots
+```{r cover_legend}
+
 renderPlot({ # separate validation statements so they are checked in sequence
-  ggpubr::as_ggplot(cowplot::get_legend(
-    ggplot(iris, aes(x = Sepal.Length, y=Sepal.Width, color = Species)) +
-      geom_point() + 
-      theme_bw(base_size = 22) + 
-      theme(legend.position = "top",
-            legend.key.width = unit(2, "cm"))))
-}, height = 40) # setting the width here or at the 'Legend' subheading seems to rescale the height too. Size of ggplot legends is absolute. Set height through the 'Legend' subheading in combination with here. Legend width will not adjust with browser window. Fixed the width issue by putting the plot notes on a white background.
+  shiny::req(!is.null(rv_param_temp$cover_subdat), !is.null(rv_param_temp$cover_plot$legend))
+  if(any(!rv_param_temp$sel_showRSS %in% rv_param_temp$cover_subdat$RSS, !rv_param_temp$sel_sublev %in% rv_param_temp$cover_subdat$NumerLevel)) { # this if-statement forces the plot to be reset to blank when these conditions apply
+    
+    cover_legend <- ggplot(dat = data.frame()) + theme_minimal()
+  } else {
+    
+    cover_legend <-
+      rv_param_temp$cover_plot$legend # shared legend for dashboard
+  }
+  grid.arrange(cover_legend)
+}, height = 40)
 ```
 
 ####
@@ -952,7 +1079,7 @@ renderPlot({ # separate validation statements so they are checked in sequence
 <center><h3>% Cover per Site</h3></center>
 <br>
 ```{r plot_PC}
-output$out_cover_plot <- plotly::renderPlotly({
+output$out_cover_plotly <- plotly::renderPlotly({
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -962,14 +1089,12 @@ output$out_cover_plot <- plotly::renderPlotly({
   
   shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev))
 
-    saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
-saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS")
+rv_param_temp$cover_plot <- FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, y_text = paste0("Mean % Cover (", input$sel_error, ")"), which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)
 
-FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, y_text = paste0("Mean % Cover Per Transect (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite)
-  
+rv_param_temp$cover_plot$plot %>% hide_legend(.)
 })
 
-plotlyOutput("out_cover_plot")
+plotlyOutput("out_cover_plotly")
 ```
 
 </div>
@@ -978,7 +1103,7 @@ plotlyOutput("out_cover_plot")
 <center><h3>Relative Cover per Site</h3></center>
 <br>
 ```{r plot_RC}
-output$out_RC_plot <- plotly::renderPlotly({
+output$out_RC_plotly <- plotly::renderPlotly({
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -992,11 +1117,11 @@ output$out_RC_plot <- plotly::renderPlotly({
     need(rv_param_temp$sel_lev!="Category", message = "Relative cover is estimated only when the grouping level is 'Functional Group' or 'Taxon'")
   )
   
-  FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "CategoryCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, y_text = paste0("Mean % Relative Cover in Group (", input$sel_error, ")"), PC_blackwhite = input$PC_blackwhite)
+  FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "CategoryCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, y_text = paste0("Mean % Relative Cover (", input$sel_error, ")"), which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)$plot %>% hide_legend(.)
 
 })
 
-plotlyOutput("out_RC_plot")
+plotlyOutput("out_RC_plotly")
 ```
 </div>
 </div>
@@ -1004,76 +1129,113 @@ plotlyOutput("out_RC_plot")
 % Cover (data & est'd CI) {data-navmenu="Group Cover per Site"}
 ======================================  
 
-#### <font size="3">**For each BLAH, this table shows BLAH BLAH **</font>
+#### <font size="3">**This table corresponds with the left-side panel of the line graphs. The data shown are mean transect % cover and various bootstrapped confidence intervals by site and category/functional group/taxon level.**</font>
 
-* Hover over a column name to see column definitions
+* 'EstimCov' is mean transect % cover for the category, functional group, or taxon level. Transect % cover is calculated as # of survey points in that level in that transect, divided by the adjusted number of survey points in the transect (for that survey event). The average of the transect % covers is the 'EstimCov'.
 
-* EXPLANATION OF CALCULATIONS
-
-* Remember that a 95% confidence interval gives us an idea of confidence in the mean estimate -- this is not the same as the standard deviation of the samples. 
+* Export buttons only export records visible on the current page. To export ALL data (or all filtered data), select 'Show [All] entries' to make all records visible on current page and then click the export button (e.g., Excel). For large data files, export may take a few seconds. 
 
 ```{r}
-output$tab_cover <- renderReactable({
+output$out_plot_cover_tab <- DT::renderDT({
+  Sys.sleep(0.75)
+  
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
   shiny::req(!is.null(rv_param_temp$cover_subdat))
   
-  reactable(
-    subset(rv_param_temp$cover_subdat, DenomGroup == "TransectCount"),
-    resizable = TRUE, 
-    searchable = TRUE,
-    filterable = TRUE,
-    striped = TRUE,
-    highlight = TRUE,
-    showSortIcon = TRUE,
-    compact = TRUE,
-    bordered = TRUE,
-    showPageSizeOptions = TRUE, 
-    pageSizeOptions = c(20, 30, 40, 50), 
-    defaultPageSize = 20)
+  plot_cover_tab <- rv_param_temp$cover_subdat %>%
+    dplyr::filter(DenomGroup == "TransectCount") %>%
+    dplyr::select(-RSS, -DenomGroup, -SiteScale) %>%
+    dplyr::mutate_at(c("ReportingSite", "Site", "IsActive", "Purpose", "Category", "NumerGroup", "NumerLevel"), as.factor) %>%
+    dplyr::mutate_at(c("N"), as.integer) %>%
+    dplyr::rename(
+      NumTransects = N,
+      GroupedBy = NumerGroup,
+      GroupLevel = NumerLevel)
+  
+  DT::datatable(
+    plot_cover_tab,
+    filter = "top",
+    class="compact stripe",
+    rownames= FALSE,
+    extensions=c('Buttons'),
+    options = list(
+      filter = "top",
+      selection = "multiple",
+      scrollX = TRUE,
+      autoWidth = TRUE,
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all"),
+        list(width = '185px', targets = c(10)) # larger column for TripName
+        )
+      )
+  )
 })
-
-reactableOutput("tab_cover")
-tags$style("#tab_cover{height:100vh;overflow-x:scroll;overflow-y:scroll}")
-``` 
+dataTableOutput("out_plot_cover_tab")
+tags$style("#out_plot_cover_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+```
 
 Relative % Cover (data & est'd CI) {data-navmenu="Group Cover per Site"} 
 ======================================  
 
-#### <font size="3">**For each BLAH, this table shows BLAH BLAH **</font>
+#### <font size="3">**This table corresponds with the right-side panel of the line graphs. The data shown are relative % cover and various bootstrapped confidence intervals by site and functional group/taxon level.**</font>
 
-* Hover over a column name to see column definitions
+* 'EstimCov' is RELATIVE % cover for the functional group or taxon level. It is calculated as # of survey points in that functional group or taxon level, divided by # of survey points in the broader category (e.g., CORAL). Totals for numerator and denominator are summed across all surveyed transects for that (reporting) site-survey event.
 
-* EXPLANATION OF CALCULATIONS
-
-* Remember that a 95% confidence interval gives us an idea of confidence in the mean estimate -- this is not the same as the standard deviation of the samples. 
+* Export buttons only export records visible on the current page. To export ALL data (or all filtered data), select 'Show [All] entries' to make all records visible on current page and then click the export button (e.g., Excel). For large data files, export may take a few seconds. 
 
 ```{r}
-output$tab_rel_cover <- renderReactable({
+output$out_plot_relcover_tab <- DT::renderDT({
+  Sys.sleep(0.75)
+  
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
   shiny::req(!is.null(rv_param_temp$cover_subdat))
   
-  reactable(
-    subset(rv_param_temp$cover_subdat, DenomGroup == "CategoryCount"),
-    resizable = TRUE, 
-    searchable = TRUE,
-    filterable = TRUE,
-    striped = TRUE,
-    highlight = TRUE,
-    showSortIcon = TRUE,
-    compact = TRUE,
-    bordered = TRUE,
-    showPageSizeOptions = TRUE, 
-    pageSizeOptions = c(20, 30, 40, 50), 
-    defaultPageSize = 20)
+  plot_relcover_tab <- rv_param_temp$cover_subdat %>%
+    dplyr::filter(DenomGroup == "CategoryCount") %>%
+    dplyr::select(-RSS, -DenomGroup, -SiteScale) %>%
+    dplyr::mutate_at(c("ReportingSite", "Site", "IsActive", "Purpose", "Category", "NumerGroup", "NumerLevel"), as.factor) %>%
+    dplyr::mutate_at(c("N"), as.integer) %>%
+    dplyr::rename(
+      NumTransects = N,
+      GroupedBy = NumerGroup,
+      GroupLevel = NumerLevel)
+  
+  DT::datatable(
+    plot_relcover_tab,
+    filter = "top",
+    selection = "multiple",
+    class="compact stripe",
+    rownames= FALSE,
+    extensions=c('Buttons'),
+    options = list(
+      scrollX = TRUE,
+      autoWidth = TRUE,
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all"),
+        list(width = '185px', targets = c(10)) # larger column for TripName
+        )
+      )
+  )
 })
+dataTableOutput("out_plot_relcover_tab")
+tags$style("#out_plot_relcover_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+```
 
-reactableOutput("tab_rel_cover")
-tags$style("#tab_rel_cover{height:100vh;overflow-x:scroll;overflow-y:scroll}")
-``` 
-
-% Bleaching and Relative Bleaching (figs) {data-navmenu="Coral Bleaching per Site"}
+Coral Bleaching (line graphs w/error bars) {data-navmenu="Coral Bleaching per Site"}
 ======================================
 Inputs {.sidebar data-width=300}
 -------------------------------------
@@ -1113,139 +1275,287 @@ wellPanel(
       dplyr::filter(if(input$bleach_RSS_active == TRUE) IsActive == 1 else TRUE) %>%
       {if(input$sel_bleach_sitescale == "Site") dplyr::pull(., Site) else dplyr::pull(., ReportingSite)} %>% unique(.)
     
-    # Select (reporting) site
-    selectInput("sel_bleach_showRSS", 
-                label = paste0("Show results for this ", if_else(input$sel_bleach_sitescale == "ReportingSite", "reporting site", "site")),
-                choices = bleach_RSS_choices, 
-                selected = switch(is.null(input$sel_bleach_showRSS)+1, input$sel_bleach_showRSS, bleach_RSS_choices[1]))
-  })
-) # end of 'wp_cover_criteria'
-```
-*\*ADD EXPLANATORY TEXT*
+    # Select (reporting) sites
+    checkboxGroupInput("sel_bleach_showRSS", 
+                       label = paste0("Show results for these ", if_else(input$sel_bleach_sitescale == "ReportingSite", "reporting sites", "sites")),
+                       choices = bleach_RSS_choices, 
+                       selected = if(!is.null(input$sel_bleach_showRSS) & all(input$sel_bleach_showRSS %in% bleach_RSS_choices)) {input$sel_bleach_showRSS} else {bleach_RSS_choices}) # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
+  }),
   
-Column
+  br(),
+  
+  actionButton("button_update_bleach", "UPDATE BLEACH SUMMARIES", class = "green-action-button")
+) # end of 'wp_bleach_criteria'
+```
+
+```{r input_bleach_format}
+
+h4("Figure Format Options (plots update immediately)")
+
+br()
+
+renderUI({
+  radioButtons("sel_bleach_error",
+               label = "Bootstrapped error bars to plot",
+               choiceNames = list("90%CI", "68%CI (~1SE)", "50%CI"),
+               choiceValues = list("90%CI", "68%CI", "50%CI"),
+               selected = switch(is.null(input$sel_bleach_error)+1, input$sel_bleach_error, "68%CI"))
+})
+
+checkboxInput("bleach_free_ymax", label = "Allow y-axes scales to vary among plots", value = FALSE)
+```
+
+Coral Bleaching
 -------------------------------------
-### Coral Bleaching as % Cover of Site
+#### <font size="3">**These line graphs show % cover by bleach level (left-side panel) and relative % cover by bleach level (right-side panel) for each selected site**</font>
+
+* Relative % cover is calculated as % of coral cover in each bleach level
+
+* Confidence intervals are bootstrapped. For a NORMALLY distributed characteristic, the 68% CI is equal to the mean cover estimate +/- 1 standard error.
+
+####
+```{r bleach_legend}
+
+renderPlot({ # separate validation statements so they are checked in sequence
+  shiny::req(!is.null(rv_param_temp$bleach_subdat), !is.null(rv_param_temp$bleach_plot$legend))
+  if(any(!rv_param_temp$sel_bleach_showRSS %in% rv_param_temp$bleach_subdat$RSS)) { # this if-statement forces the plot to be reset to blank when these conditions apply
+    
+    bleach_legend <- ggplot(dat = data.frame()) + theme_minimal()
+  } else {
+    bleach_legend <-
+      rv_param_temp$bleach_plot$legend # shared legend for dashboard
+  }
+  grid.arrange(bleach_legend)
+}, height = 40)
+```
+
+####
+<div class="flex-container">
+<div class="flex-left">
   
+<center><h3>Coral Bleaching as % Cover of Site</h3></center>
+<br>
 ```{r plot_bleachPC}
-output$out_bleach_PC_plot <- plotly::renderPlotly({
+output$out_bleachPC_plotly <- plotly::renderPlotly({
+  
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
-  shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale), !is.null(input$sel_bleach_showRSS))
-
-    # Data to display in plots and table
-  rv_param_temp$bleach_subdat <- rv$bleach_CIs_df %>%
-    dplyr::mutate(RSS = get(input$sel_bleach_sitescale),
-                  Year = lubridate::year(SurvDate),
-                  NumerLevel = factor(NumerLevel, levels = c("NONCORAL", "NoData", "UNBL", "BL1", "BL2", "BL3", "BL4"))) %>%
-    dplyr::filter(
-      RSS == input$sel_bleach_showRSS,
-      if(input$sel_bleach_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
-    arrange(SurvDate) %>%
-    dplyr::mutate(SurvDate = as.factor(SurvDate))
-  
-  shiny::req(!is.null(rv_param_temp$bleach_subdat))
-
-  plot_bleachPC <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "TransectCount"), yaxis_title = "% Cover of Site")
-    
-  ggplotly(plot_bleachPC)
+  shiny::validate(
+    need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the left, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"))
  
+  shiny::req(!is.null(input$sel_bleach_error), !is.null(input$bleach_free_ymax), !is.null(rv_param_temp$sel_bleach_showRSS))
+  
+  rv_param_temp$bleach_plot <- FuncPlotPointCI(dat = rv_param_temp$bleach_subdat, denom = "TransectCount", sel_error = input$sel_bleach_error, sel_splitplot = "one_loc_many_sub", free_ymax = input$bleach_free_ymax, y_text = paste0("% Cover of Site (", input$sel_bleach_error, ")"), which_showRSS = "bleach", PC_blackwhite = FALSE)
+  
+  rv_param_temp$bleach_plot$plot %>% hide_legend(.)
 })
-plotlyOutput("out_bleach_PC_plot")
+
+plotlyOutput("out_bleachPC_plotly")
 ```
 
-### Coral Bleaching as % Cover of Corals
-  
+</div>
+<div class="flex-right">
+
+<center><h3>Coral Bleaching as % Cover of Corals</h3></center>
+<br>
 ```{r plot_bleachRC}
-output$out_bleach_RC_plot <- plotly::renderPlotly({
+output$out_bleachRC_plotly <- plotly::renderPlotly({
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
-  shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale), !is.null(input$sel_bleach_showRSS))
+  shiny::validate(
+    need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the left, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"))
   
-  shiny::req(!is.null(rv_param_temp$bleach_subdat))
+  shiny::req(!is.null(input$sel_bleach_error), !is.null(input$bleach_free_ymax), !is.null(rv_param_temp$sel_bleach_showRSS))
   
-  plot_bleachRC <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "CategoryCount"), yaxis_title = "% Cover of Corals")
-    
-  ggplotly(plot_bleachRC)
- 
+  FuncPlotPointCI(dat = rv_param_temp$bleach_subdat, denom = "CategoryCount", sel_error = input$sel_bleach_error, sel_splitplot = "one_loc_many_sub", free_ymax = input$bleach_free_ymax, y_text = paste0("% Cover of Corals (", input$sel_bleach_error, ")"), which_showRSS = "bleach", PC_blackwhite = FALSE)$plot %>% hide_legend(.)
+  
 })
-plotlyOutput("out_bleach_RC_plot")
+
+plotlyOutput("out_bleachRC_plotly")
+```
+</div>
+</div>
+
+% Coral Bleaching (stacked bar plots) {data-navmenu="Coral Bleaching per Site"}
+======================================
+% Cover and Relative Cover per Site
+-------------------------------------
+#### <font size="3">**These stacked bar plots show % cover by bleach level (left-side panel) and relative % cover by bleach level (right-side panel) for each selected site and category/functional group/taxon level**</font>
+
+####
+```{r}
+
+renderPlot({ # separate validation statements so they are checked in sequence
+
+  shiny::req(!is.null(rv_param_temp$bleach_subdat), !is.null(rv_param_temp$bleach_plot$legend))
+  if(any(!rv_param_temp$sel_bleach_showRSS %in% rv_param_temp$bleach_subdat$RSS)) { # this if-statement forces the plot to be reset to blank when these conditions apply
+    
+    bleach_legend <- ggplot(dat = data.frame()) + theme_minimal()
+  } else {
+    bleach_legend <-
+      rv_param_temp$bleach_plot$legend # shared legend for dashboard
+  }
+  grid.arrange(bleach_legend)
+}, height = 40)
 ```
 
+####
+<div class="flex-container">
+<div class="flex-left">
+  
+<center><h3>Coral Bleaching as % Cover of Site</h3></center>
+<br>
+```{r barplot_bleachPC}
+output$out_bleach_stackplot <- renderPlot({
+  
+  shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale))
+
+  FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "TransectCount"), yaxis_title = "% Cover of Site")
+},
+      height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_bleach_showRSS));length(rv_param_temp$sel_bleach_showRSS)*350}
+  )
+
+# tags$style("#out_bleach_stackplot{height:100vh;overflow-y:scroll}")
+plotOutput("out_bleach_stackplot")
+```
+
+</div>
+<div class="flex-right">
+  
+<center><h3>Coral Bleaching as % Cover of Corals</h3></center>
+<br>
+```{r barplot_bleachRC}
+output$out_bleach_stackplot2 <- renderPlot({
+    
+    shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale))
+  
+  FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "CategoryCount"), yaxis_title = "% Cover of Corals")
+},
+      height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_bleach_showRSS));length(rv_param_temp$sel_bleach_showRSS)*350}
+  )
+
+# tags$style("#out_bleach_stackplot2{height:100vh;overflow-y:scroll}")
+plotOutput("out_bleach_stackplot2")
+
+```
+</div>
+</div>
+  
 % Bleaching (data & est'd CI) {data-navmenu="Coral Bleaching per Site"}
 ======================================
-#### <font size="3">**For each BLAH, this table shows BLAH BLAH **</font>
+#### <font size="3">**This table corresponds with the left-side panel of the coral bleaching line graphs. For each site, the data shown are % cover by bleach level and various bootstrapped confidence intervals.**</font>
 
-* Hover over a column name to see column definitions
+* % cover is calculated as # of survey points in that level in that transect, divided by the adjusted number of survey points in the transect (for that survey event). The average of the transect % covers is the 'EstimCov'.
 
-* EXPLANATION OF CALCULATIONS
+* Export buttons only export records visible on the current page. To export ALL data (or all filtered data), select 'Show [All] entries' to make all records visible on current page and then click the export button (e.g., Excel). For large data files, export may take a few seconds.
 
-* Remember that a 95% confidence interval gives us an idea of confidence in the mean estimate -- this is not the same as the standard deviation of the samples. 
 
 ```{r}
-output$tab_bleach <- renderReactable({
+output$out_bleach_tab <- DT::renderDT({
+  Sys.sleep(0.75)
+  
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
-  shiny::req(!is.null(rv$bleach_CIs_df))
   
-  reactable(
-    subset(rv$bleach_CIs_df, DenomGroup == "TransectCount"),
-    resizable = TRUE, 
-    searchable = TRUE,
-    filterable = TRUE,
-    striped = TRUE,
-    highlight = TRUE,
-    showSortIcon = TRUE,
-    compact = TRUE,
-    bordered = TRUE,
-    showPageSizeOptions = TRUE, 
-    pageSizeOptions = c(20, 30, 40, 50), 
-    defaultPageSize = 20)
+  shiny::req(!is.null(rv_param_temp$bleach_subdat))
+  
+  bleach_tab <- rv_param_temp$bleach_subdat %>% # for easier filtering
+    dplyr::filter(DenomGroup == "TransectCount") %>%
+    dplyr::select(-RSS, -DenomGroup, -SiteScale) %>%
+    dplyr::select(ReportingSite, Site, IsActive, Year, everything()) %>% # rearrange column order
+        dplyr::mutate_at(c("ReportingSite", "Site", "IsActive", "Purpose", "Category", "NumerGroup", "NumerLevel"), as.factor) %>%
+    dplyr::mutate_at(c("N", "Year"), as.integer) %>%
+    dplyr::rename(
+      NumTransects = N,
+      GroupedBy = NumerGroup,
+      GroupLevel = NumerLevel)
+  
+  DT::datatable(
+    bleach_tab,
+    filter = "top",
+    class="compact stripe",
+    rownames= FALSE,
+    extensions=c('Buttons'),
+    options = list(
+      filter = "top",
+      selection = "multiple",
+      scrollX = TRUE,
+      autoWidth = TRUE,
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all") # larger column for TripName
+      )
+    )
+  )
 })
 
-reactableOutput("tab_bleach")
-tags$style("#tab_bleach{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+dataTableOutput("out_bleach_tab")
+tags$style("#out_bleach_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ``` 
 
 Relative % Bleaching (data & est'd CI) {data-navmenu="Coral Bleaching per Site"}
 ======================================
-#### <font size="3">**For each BLAH, this table shows BLAH BLAH **</font>
+#### <font size="3">**This table corresponds with the right-side panel of the coral bleaching line graphs. For each site, the data shown are relative % cover by bleach level and various bootstrapped confidence intervals.**</font>
 
-* Hover over a column name to see column definitions
+* 'EstimCov' is RELATIVE % cover by bleach level. It is calculated as # of survey points in that coral bleaching level, divided by # of survey points classified as CORAL. Totals for numerator and denominator are summed across all surveyed transects for that (reporting) site-survey event.
 
-* EXPLANATION OF CALCULATIONS
-
-* Remember that a 95% confidence interval gives us an idea of confidence in the mean estimate -- this is not the same as the standard deviation of the samples. 
+* Export buttons only export records visible on the current page. To export ALL data (or all filtered data), select 'Show [All] entries' to make all records visible on current page and then click the export button (e.g., Excel). For large data files, export may take a few seconds. 
 
 ```{r}
-output$tab_rel_bleach <- renderReactable({
+output$out_relbleach_tab <- DT::renderDT({
+  Sys.sleep(0.75)
+  
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
-  shiny::req(!is.null(rv$bleach_CIs_df))
   
-  reactable(
-    subset(rv$bleach_CIs_df, DenomGroup == "CategoryCount"),
-    resizable = TRUE, 
-    searchable = TRUE,
-    filterable = TRUE,
-    striped = TRUE,
-    highlight = TRUE,
-    showSortIcon = TRUE,
-    compact = TRUE,
-    bordered = TRUE,
-    showPageSizeOptions = TRUE, 
-    pageSizeOptions = c(20, 30, 40, 50), 
-    defaultPageSize = 20)
+  shiny::req(!is.null(rv_param_temp$bleach_subdat))
+  
+  relbleach_tab <- rv_param_temp$bleach_subdat %>% # for easier filtering
+    dplyr::filter(DenomGroup == "CategoryCount") %>%
+    dplyr::select(-RSS, -DenomGroup, -SiteScale) %>%
+    dplyr::select(ReportingSite, Site, IsActive, Year, everything()) %>% # rearrange column order
+    dplyr::mutate_at(c("ReportingSite", "Site", "IsActive", "Purpose", "Category", "NumerGroup", "NumerLevel"), as.factor) %>%
+    dplyr::mutate_at(c("N", "Year"), as.integer) %>%
+    dplyr::rename(
+      NumTransects = N,
+      GroupedBy = NumerGroup,
+      GroupLevel = NumerLevel)
+  
+  DT::datatable(
+    relbleach_tab,
+    filter = "top",
+    class="compact stripe",
+    rownames= FALSE,
+    extensions=c('Buttons'),
+    options = list(
+      filter = "top",
+      selection = "multiple",
+      scrollX = TRUE,
+      autoWidth = TRUE,
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all") # larger column for TripName
+      )
+    )
+  )
 })
 
-reactableOutput("tab_rel_bleach")
-tags$style("#tab_rel_bleach{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+dataTableOutput("out_relbleach_tab")
+tags$style("#out_relbleach_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ``` 
 
-Coral Disease Summaries per Site (Plots) {data-navmenu="Disease Summaries"}
+Coral Disease Counts & Prevalence (line graphs) {data-navmenu="Coral Disease per Site"}
 ======================================
 Inputs {.sidebar data-width=300}
 -------------------------------------
@@ -1271,33 +1581,34 @@ wellPanel(
                  selected = switch(is.null(input$sel_disease_sitescale)+1, input$sel_disease_sitescale, "Site"))
   }),
   
-  # tags$div(renderText({
-  #   shiny::req(!is.null(input$sel_disease_sitescale))
-  #   if(input$sel_disease_sitescale == "ReportingSite") {
-  #     paste0("NOTE: Summaries by Reporting Site are limited to survey events for which data are available for all included Sites")  # Explain how reporting sites are summarized
-  #   }
-  # }), style = "font-size:14px;, !is. color:red; font-weight:bold;"),
+  br(),
+  
+    tags$div(renderText({
+    shiny::req(!is.null(input$sel_bleach_sitescale))
+    if(input$sel_disease_sitescale == "ReportingSite") {
+      paste0("NOTE: Summaries by Reporting Site are limited to survey events for which data are available for all included Sites")  # Explain how reporting sites are summarized
+    }
+  }), style = "font-size:14px;, !is. color:red; font-weight:bold;"),
+  
+  br(),
   
   renderUI({
     shiny::req(!is.null(rv$disease_df), !is.null(input$sel_disease_sitescale), !is.null(input$disease_RSS_active))
-    cat("line1143")
     
     disease_RSS_choices <- rv$disease_df %>%
       dplyr::filter(if(input$disease_RSS_active == TRUE) IsActive == 1 else TRUE) %>%
-      {if(input$sel_disease_sitescale == "Site") dplyr::pull(., Site) else dplyr::pull(., ReportingSite)} %>% 
-      unique(.)
-    cat("line1149")
+      {if(input$sel_disease_sitescale == "Site") dplyr::pull(., Site) else dplyr::pull(., ReportingSite)} %>% unique(.)
     
-    # Select (reporting) site
-    selectInput("sel_disease_showRSS", 
-                label = paste0("Show results for this ", if_else(input$sel_disease_sitescale == "ReportingSite", "reporting site", "site")),
-                choices = disease_RSS_choices, 
-                selected = switch(is.null(input$sel_disease_showRSS)+1, input$sel_disease_showRSS, disease_RSS_choices[1]))
+    # Select (reporting) sites
+    checkboxGroupInput("sel_disease_showRSS", 
+                       label = paste0("Show results for these ", if_else(input$sel_bleach_sitescale == "ReportingSite", "reporting sites", "sites")),
+                       choices = disease_RSS_choices, 
+                       selected = if(!is.null(input$sel_disease_showRSS) & all(input$sel_disease_showRSS %in% disease_RSS_choices)) {input$sel_disease_showRSS} else {disease_RSS_choices}) # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
   }),
   
   renderUI({
     shiny::req(!is.null(rv$disease_df), !is.null(input$sel_disease_sitescale), !is.null(input$sel_disease_showRSS), !is.null(input$sel_disease_episodic))
-    cat("line1160")
+    
     rv_param_temp$avail_diseases <- rv$disease_df %>%
       dplyr::rename(RSS = input$sel_disease_sitescale) %>%
       dplyr::filter(
@@ -1306,7 +1617,7 @@ wellPanel(
       pull(DiseaseCode) %>%
       unique() %>%
       sort()
-    cat("line1169")
+    
     checkboxGroupInput("sel_diseases",
                        label = "Include these diseases",
                        choices = rv_param_temp$avail_diseases,
@@ -1325,13 +1636,7 @@ wellPanel(
   
   br(),
 
-  actionButton("button_update_disease", "UPDATE DISEASE SUMMARIES", class = "green-action-button"),
-  
-  br(),
-  
-  br(),
-  
-  actionButton("button_export_disease", "Export Disease Data", class = "blue-action-button")
+  actionButton("button_update_disease", "UPDATE DISEASE SUMMARIES", class = "green-action-button")
 ) # end of 'wp_disease_criteria'
 ```
 
@@ -1339,281 +1644,359 @@ wellPanel(
 
 h4("Figure Format Options (plots update immediately)")
 
-checkboxInput("sel_ShowDiseaseTransects",
-                      label = "Show results per transect",
-                      value = FALSE)
+br()
+
+checkboxInput("disease_by_transect", label = "Show separate line for each transect (line graphs only)", value = FALSE)
+
+checkboxInput("disease_free_ymax", label = "Allow y-axes scales to vary among plots", value = FALSE)
 ```
 
-*\*ADD EXPLANATORY TEXT*
-  
-Column
+Coral Disease
 -------------------------------------
+#### <font size="3">**These line graphs show # of diseased colonies (left-side panel) and disease prevalence (right-side panel) by transect or site**</font>
+  
+* Disease prevalence is calculated as 100 * (# of colonies with disease / # of colonies)
 
-### Coral Disease Counts
+* Counts and prevalence are summaries of the survey data, without estimates of statistical error.
+
+####
+```{r disease_legend}
+# This is only relevant when disease_by_transect is TRUE
+renderPlot({ # separate validation statements so they are checked in sequence
+  shiny::req(!is.null(rv_param_temp$disease_prev_subdat_transect), !is.null(input$disease_by_transect), !is.null(rv_param_temp$disease_prev_plot$legend))
   
-```{r}
-output$out_disease_plot <- plotly::renderPlotly({
-  shiny::validate(
-    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
-  
-  shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(rv_param_temp$disease_prev_transect), !is.null(rv_param_temp$disease_prev_site), !is.null(input$sel_ShowDiseaseTransects))
-  
-    # Data to display in plots and table
-  if(input$sel_ShowDiseaseTransects == TRUE) {
-    rv_param_temp$disease_subdat <- rv_param_temp$disease_prev_transect %>%
-      ungroup() %>%
-      dplyr::select(SurvDate, Site_Transect, Site, Transect, Diseased = TransectDiseased, NotDiseased = TransectNotDiseased) %>%
-    arrange(Site_Transect, SurvDate) %>%
-    dplyr::mutate(SurvDate = as.factor(SurvDate)) %>%
-    tidyr::pivot_longer(cols = c("Diseased", "NotDiseased"), names_to = "DiseaseStatus", values_to = "NumColonies")
+  if(input$disease_by_transect == FALSE | any(!rv_param_temp$sel_disease_showRSS %in% rv_param_temp$disease_prev_subdat$RSS)) { # this if-statement forces the plot to be reset to blank when these conditions apply
     
-    plot_disease <- FuncPlotDiseaseTransect(dat = rv_param_temp$disease_subdat, y_col = "NumColonies", yaxis_title = "Number of coral colonies", subtitle_text = paste0("Count of diseased colonies at ", unique(rv_param_temp$disease_prev_transect$RSS), ", shown by transect - FOR SELECTED DISEASES ONLY"))
-    
+    disease_legend <- ggplot(dat = data.frame()) + theme_minimal()
   } else {
-    disease_dat <- rv_param_temp$disease_prev_site %>%
-    ungroup() %>%
-    dplyr::select(Year, SurvDate, Diseased = SiteDiseased, NotDiseased = SiteNotDiseased) %>%
-    arrange(SurvDate) %>%
-    dplyr::mutate(SurvDate = as.factor(SurvDate)) %>%
-    tidyr::pivot_longer(cols = c("Diseased", "NotDiseased"), names_to = "DiseaseStatus", values_to = "NumColonies")
-    
-    plot_disease <- FuncPlotDiseaseSite(dat = disease_dat, y_col = "NumColonies", yaxis_title = "Number of coral colonies", subtitle_text = paste0("Count of diseased colonies at ", unique(rv_param_temp$disease_prev_site$RSS), ", summed across transects - FOR SELECTED DISEASES ONLY"))
+    disease_legend <-
+      rv_param_temp$disease_prev_plot$legend # shared legend for dashboard
   }
-
-  ggplotly(plot_disease)
- 
-})
-plotlyOutput("out_disease_plot")
+  grid.arrange(disease_legend)
+}, height = 40)
 ```
 
-### Coral Disease Prevalence
+####
+<div class="flex-container">
+<div class="flex-left">
   
-```{r}
-output$out_disease_prev_plot <- plotly::renderPlotly({
+<center><h3>Number of Diseased Coral Colonies (Raw Survey Data)</h3></center>
+<br>
+```{r plot_disease_count}
+output$out_disease_count_plotly <- plotly::renderPlotly({
+  
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
-  shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(rv_param_temp$disease_prev_site), !is.null(rv_param_temp$disease_prev_transect), !is.null(input$sel_ShowDiseaseTransects))
-
-    # Data to display in plots and table
-  if(input$sel_ShowDiseaseTransects == TRUE) {
-    disease_trans_prev_dat <- rv_param_temp$disease_prev_transect %>%
-    ungroup() %>%
-    dplyr::select(SurvDate, Site_Transect, Site, Transect, TransectPrev) %>%
-    dplyr::mutate(
-      Diseased = round(100 * TransectPrev, 1),
-      NotDiseased = round(100*(1 - TransectPrev), 1),
-      Unknown = NA)
+  shiny::validate(
+    need(!is.null(rv_param_temp$disease_prev_subdat) & !is.null(rv_param_temp$disease_prev_subdat_transect), message = "From 'Data Filter Options' on the left, please select site(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
   
-  disease_trans_prev_dat$Unknown[is.na(disease_trans_prev_dat$TransectPrev)] <- 100
-  disease_trans_prev_dat %<>%
-    arrange(Site_Transect, SurvDate) %>%
-    dplyr::mutate(SurvDate = as.factor(SurvDate)) %>%
-    tidyr::pivot_longer(cols = c("Diseased", "NotDiseased", "Unknown"), names_to = "DiseaseStatus", values_to = "PercentColonies")
+  shiny::req(!is.null(input$disease_free_ymax), !is.null(rv_param_temp$sel_disease_showRSS))
+  
+  rv_param_temp$disease_count_plot <- FuncPlotPointDisease(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$disease_prev_subdat, rv_param_temp$disease_prev_subdat_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SiteDiseased", "TransectDiseased"), free_ymax = input$disease_free_ymax, y_text = "Number of Diseased Coral Colonies Detected", disease_by_transect = input$disease_by_transect)
+  
+  rv_param_temp$disease_count_plot$plot %>% hide_legend(.)
+})
 
-  plot_disease_prev <- FuncPlotDiseaseTransect(dat = disease_trans_prev_dat, y_col = "PercentColonies", yaxis_title = "% of colonies with disease", subtitle_text = paste0("Disease prevalence at ", unique(rv_param_temp$disease_prev_transect$RSS), ", shown by transect - FOR SELECTED DISEASES ONLY"))
+plotlyOutput("out_disease_count_plotly")
+```
+
+</div>
+<div class="flex-right">
+  
+<center><h3>Coral Disease Prevalence (Raw Survey Data)</h3></center>
+<br>
+```{r plot_disease_prev}
+output$out_disease_prev_plotly <- plotly::renderPlotly({
+
+  shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
+  shiny::validate(
+    need(!is.null(rv_param_temp$disease_prev_subdat) & !is.null(rv_param_temp$disease_prev_subdat_transect), message = "From 'Data Filter Options' on the left, please select site(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
+ 
+  shiny::req(!is.null(input$disease_free_ymax), !is.null(rv_param_temp$sel_disease_showRSS))
+  
+  rv_param_temp$disease_prev_plot <- FuncPlotPointDisease(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$disease_prev_subdat, rv_param_temp$disease_prev_subdat_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SitePrev", "TransectPrev"), free_ymax = input$disease_free_ymax, y_text = "% of Coral Colonies with Disease", disease_by_transect = input$disease_by_transect)
+  
+  rv_param_temp$disease_prev_plot$plot %>% hide_legend(.)
+})
+
+plotlyOutput("out_disease_prev_plotly")
+```
+</div>
+</div>
     
-  } else {
-    disease_prev_dat <- rv_param_temp$disease_prev_site %>%
+% Coral Disease Counts & Prevalence (stacked bar plots) {data-navmenu="Coral Disease per Site"}
+======================================
+
+Coral Disease Counts & Prevalence per Site
+-------------------------------------
+#### <font size="3">**These stacked bar plots show count of diseased colonies (left-side panel) and disease prevalence (right-side panel) for each selected site**</font>
+
+####
+```{r}
+renderPlot({ # separate validation statements so they are checked in sequence
+  shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(rv_param_temp$disease_prev_subdat))
+
+  disease_barplot_legend <-
+    ggpubr::as_ggplot(cowplot::get_legend(
+  ggplot(data.frame(x=1:3, y = 1:3, DiseaseStatus = c("Diseased", "NotDiseased", "Unknown")), aes(x = x, y = y, fill = DiseaseStatus)) +
+    geom_col() + 
+    scale_fill_manual(values = c("Diseased" = "red", "NotDiseased" = "black", "Unknown" = "yellow"), guide = guide_legend(override.aes = list(size=1.25))) + 
+    theme_bw(base_size = 12) +
+    theme(legend.position = "top",
+          legend.text = element_text(size = 16),
+          legend.title = element_text(size = 16))
+  ))
+  grid.arrange(disease_barplot_legend)
+}, height = 40)
+```
+
+####
+<div class="flex-container">
+  <div class="flex-left">
+  
+<center><h3>Number of Diseased Coral Colonies (Raw Survey Data)</h3></center>
+<br>
+```{r barplot_disease_count}
+output$out_disease_count_stackplot <- renderPlot({
+  
+  shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(rv_param_temp$disease_prev_subdat))
+  
+  disease_counts_dat <- rv_param_temp$disease_prev_subdat %>%
     ungroup() %>%
-    dplyr::select(Year, SurvDate, SitePrev) %>%
+    dplyr::select(RSS, Year, SurvDate, Diseased = SiteDiseased, NotDiseased = SiteNotDiseased) %>%
+    dplyr::arrange(RSS, SurvDate) %>%
+    dplyr::mutate(SurvDate = as.factor(SurvDate)) %>% # this is for the bar charts
+    tidyr::pivot_longer(cols = c("Diseased", "NotDiseased"), names_to = "DiseaseStatus", values_to = "NumColonies")
+  
+  shiny::req(!is.null(disease_counts_dat))
+  
+  FuncPlotDisease(dat = disease_counts_dat, y_col = "NumColonies", yaxis_title = "Number of Coral Colonies", title_text = "Count of diseased colonies per site, summed across transects")
+},
+  height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$disease_prev_subdat) & !is.null(rv_param_temp$disease_prev_subdat_transect), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE DISEASE SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_disease_showRSS));length(rv_param_temp$sel_disease_showRSS)*350}
+)
+
+plotOutput("out_disease_count_stackplot")
+```
+
+</div>
+<div class="flex-right">
+  
+<center><h3>Coral Disease Prevalence (Raw Survey Data)</h3></center>
+<br>
+  
+```{r barplot_disease_prev}
+output$out_disease_prev_stackplot <- renderPlot({
+  
+  shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(rv_param_temp$disease_prev_subdat))
+  
+  disease_prev_dat <- rv_param_temp$disease_prev_subdat %>%
+    ungroup() %>%
+    dplyr::select(RSS, Year, SurvDate, SitePrev) %>%
     dplyr::mutate(
-      Diseased = round(100 * SitePrev, 1),
-      NotDiseased = round(100*(1 - SitePrev), 1),
+      Diseased = SitePrev,
+      NotDiseased = 100 - SitePrev,
       Unknown = NA)
   
   disease_prev_dat$Unknown[is.na(disease_prev_dat$SitePrev)] <- 100
   disease_prev_dat %<>%
-    arrange(SurvDate) %>%
+    dplyr::select(-SitePrev) %>%
+    arrange(RSS, SurvDate) %>%
     dplyr::mutate(SurvDate = as.factor(SurvDate)) %>%
     tidyr::pivot_longer(cols = c("Diseased", "NotDiseased", "Unknown"), names_to = "DiseaseStatus", values_to = "PercentColonies")
-  
-  plot_disease_prev <- FuncPlotDiseaseSite(dat = disease_prev_dat, y_col = "PercentColonies", yaxis_title = "% of colonies with disease", subtitle_text = paste0("Disease prevalence at ", unique(rv_param_temp$disease_prev_transect$RSS), ", summed across transects - FOR SELECTED DISEASES ONLY"))
-  }
 
-  ggplotly(plot_disease_prev)
- 
-})
-plotlyOutput("out_disease_prev_plot")
+  FuncPlotDisease(dat = disease_prev_dat, y_col = "PercentColonies", yaxis_title = "% of Coral Colonies with Disease", title_text = "Disease prevalence by site, summed across transects")
+},
+  height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$disease_prev_subdat) & !is.null(rv_param_temp$disease_prev_subdat_transect), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE DISEASE SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_disease_showRSS));length(rv_param_temp$sel_disease_showRSS)*350}
+)
+
+plotOutput("out_disease_prev_stackplot")
 ```
   
-Coral Maps
-====================================== 
-  Inputs {.sidebar data-width=200}
--------------------------------------
-```{r map_input}
-renderUI({
-  shiny::req(!is.null(rv$bleach_CIs_df))
-  sliderTextInput("sel_map_event", force_edges = TRUE, animate = TRUE, label = "Choose a survey event", choices = sort(as.character(unique(rv$bleach_CIs_df$SurvDate))), selected = , dragRange = FALSE, width = "95%")
-  })
+</div>
+</div>
 
-checkboxInput("sel_map_active", label = "Show active sites only", value = FALSE)
-
-radioButtons("sel_map_metric", 
-             label = "Metric to map:", 
-             choiceNames = list("% coral cover", "bleaching relative cover"),
-             choiceValues = list("coral_pc", "bleach_rc"),
-             selected = "coral_pc")
-```
-
-Column {data-width=550 vertical_layout: fill}
--------------------------------------
-*NOTE:  For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)*
-```{r maps}
-output$coral_map = renderLeaflet({
-  
-  shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
-  
-  shiny::validate(need(!is.null(rv$map_dat), message = "Map data have not been processed."))
-  
-  shiny::req(!is.null(input$sel_map_active), !is.null(input$sel_map_metric), !is.null(input$sel_map_event))
-    
-    map_df <- rv$map_dat %>%
-      dplyr::filter(if(input$sel_map_active == TRUE) IsActive == 1 else TRUE)
-    
-    shiny::req(nrow(map_df) > 0)
-    
-    min_long <- min(map_df$MedLong, na.rm = TRUE)
-    min_lat <- min(map_df$MedLat, na.rm = TRUE)
-    max_long <- max(map_df$MedLong, na.rm = TRUE)
-    max_lat <- max(map_df$MedLat, na.rm = TRUE)
-    
-    map_df %<>%
-      dplyr::filter(SurvDate == input$sel_map_event) %>%
-      select(-c(ReportingSiteName, ReportingSite, IsActive, MinYr, MaxYr))
-  
-    chartmap <- leaflet() %>%
-      addProviderTiles("Esri.NatGeoWorldMap", options = providerTileOptions(noWrap = TRUE)) %>%
-      addControl(HTML(switch(input$sel_map_metric, "coral_pc" = "% Cover coral", "bleach_rc" = "Coral bleaching relative cover"), " on: ", input$sel_map_event), position = "topleft", className="map-title") %>%
-      addScaleBar() %>% 
-      leaflet.minicharts::addMinicharts(
-          lng = map_df$MedLong,
-          lat = map_df$MedLat,
-          time = map_df$SurvDate,
-          type = "pie",
-          width = switch(input$sel_map_metric,
-                         "coral_pc" = 25,
-                         "bleach_rc" = 5*map_df$`%Coral`), 
-          height = switch(input$sel_map_metric,
-                         "coral_pc" = 25,
-                         "bleach_rc" = NA), 
-          transitionTime = 0, 
-          layerId = map_df$PopText,
-          chartdata = switch(input$sel_map_metric,
-                         "coral_pc" = as.matrix(map_df[, c("%Coral", "%NonCoral")]),
-                         "bleach_rc" = as.matrix(map_df[, c("NoData", "UNBL", "BL1", "BL2", "BL3", "BL4")])), 
-          colorPalette = switch(input$sel_map_metric,
-                         "coral_pc" = c("red", "gray"),
-                         "bleach_rc" = c("#FFFF00", "#404040", "#737373", "#8C8C8C", "#BFBFBF", "#EBEBEB")),
-          opacity = .85) 
-})
-leafletOutput('coral_map', height=600)
-```
-
-Reactables
-====================================
-
-Reactables {.tabset .tabset-fade}
--------------------------------------
-
-### Cover Data
+Disease Counts & Prevalence (summed to SITE) {data-navmenu="Coral Disease per Site"}
+======================================
+#### <font size="3">**This table shows site-level disease count and prevalence.**</font>
 
 ```{r}
-output$tab_react_raw <- renderReactable({
+output$out_disease_prev_tab <- DT::renderDT({
+  Sys.sleep(0.75)
+  
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
-  reactable(
-    rv$raw_dat,
-    resizable = TRUE, 
-    filterable = FALSE,
-    striped = FALSE,
-    highlight = TRUE,
-    showSortIcon = TRUE,
-    compact = FALSE,
-    bordered = TRUE,
-    showPageSizeOptions = TRUE, 
-    onClick = "select")
-})
-
-reactableOutput("tab_react_raw")
-tags$style("#tab_react_raw{height:100vh;overflow-x:scroll;overflow-y:scroll}")
-```  
-
-### Disease Data
-
-```{r}
-output$tab_react_disease <- renderReactable({
-  shiny::validate(
-    need(!is.null(rv$disease_df), message = "Please import new disease data or load an existing summary RDS file"))
+  shiny::req(!is.null(rv_param_temp$disease_prev_subdat))
   
-  reactable(
-    rv$disease_df,
-    resizable = TRUE, 
-    filterable = FALSE,
-    striped = FALSE,
-    highlight = TRUE,
-    showSortIcon = TRUE,
-    compact = FALSE,
-    bordered = TRUE,
-    showPageSizeOptions = TRUE, 
-    onClick = "select")
-})
-
-reactableOutput("tab_react_disease")
-tags$style("#tab_react_disease{height:100vh;overflow-x:scroll;overflow-y:scroll}")
-```
-
-Data Tables
-====================================
-
-Data Tables {.tabset .tabset-fade}
--------------------------------------
-
-### Cover Data
-
-```{r}
-output$out_cover_tab <- DT::renderDT({
-  shiny::validate(
-    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  disease_prev_tab <- rv_param_temp$disease_prev_subdat %>%
+    dplyr::select(-RSS) %>%
+    dplyr::select(ParkCode, ReportingSite, ReportingSiteName, Site, IsActive, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel, SiteDiseased, SiteNotDiseased, SitePrev, SiteStonyCoralCount1, SiteStonyCoralCount2, SiteStonyCoralCountDIFF, SiteFireCoralCount1, SiteFireCoralCount2, SiteFireCoralCountDIFF) %>%
+    dplyr::mutate_at(c("ParkCode", "ReportingSite", "ReportingSiteName", "Site", "IsActive", "Purpose", "ProtocolVersion", "ColCountsCertificationLevel"), as.factor) %>%
+    dplyr::mutate_at(c("Year", "SiteDiseased", "SiteNotDiseased", "SiteStonyCoralCount1", "SiteStonyCoralCount2", "SiteStonyCoralCountDIFF", "SiteFireCoralCount1", "SiteFireCoralCount2", "SiteFireCoralCountDIFF"), as.integer) %>%
+    dplyr::rename(
+      NumColoniesDiseased = SiteDiseased,
+      NumColoniesNOTDiseased = SiteNotDiseased,
+      DiseasePrevalence = SitePrev)
   
   DT::datatable(
-    rv$raw_dat,
+    disease_prev_tab,
+    filter = "top",
     class="compact stripe",
     rownames= FALSE,
+    extensions=c('Buttons'),
     options = list(
-      pageLength = 20,
+      filter = "top",
+      selection = "multiple",
+      scrollX = TRUE,
       autoWidth = TRUE,
-      dom = 'Bfrtip',
-      buttons = c('copy', 'csv', 'excel', 'pdf'),
-      columnDefs = list(list(className = 'dt_center', targets = "_all"))
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all") # larger column for TripName
       )
+    )
   )
 })
 
+dataTableOutput("out_disease_prev_tab")
+tags$style("#out_disease_prev_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+``` 
+
+Disease Counts & Prevalence (summed to TRANSECT) {data-navmenu="Coral Disease per Site"}
+======================================
+#### <font size="3">**This table shows transect-level disease count and prevalence.**</font>
+
+```{r}
+output$out_disease_prev_transect_tab <- DT::renderDT({
+  Sys.sleep(0.75)
+  
+  shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
+  shiny::req(!is.null(rv_param_temp$disease_prev_subdat_transect))
+  
+  disease_prev_transect_tab <- rv_param_temp$disease_prev_subdat_transect %>%
+    dplyr::select(-RSS, -Site_Transect, -TransectSurveyID) %>%
+    dplyr::select(ParkCode, ReportingSite, ReportingSiteName, Site, IsActive, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel, Transect, TransectDiseased, TransectNotDiseased, TransectPrev, StonyCoralCount1, StonyCoralCount2, StonyCoralCountDIFF, FireCoralCount1, FireCoralCount2, FireCoralCountDIFF) %>%
+    dplyr::mutate_at(c("ParkCode", "ReportingSite", "ReportingSiteName", "Site", "IsActive", "Purpose", "ProtocolVersion", "Transect", "ColCountsCertificationLevel"), as.factor) %>%
+    dplyr::mutate_at(c("Year", "TransectDiseased", "TransectNotDiseased", "StonyCoralCount1", "StonyCoralCount2", "StonyCoralCountDIFF", "FireCoralCount1", "FireCoralCount2", "FireCoralCountDIFF"), as.integer) %>%
+    dplyr::rename(
+      NumColoniesDiseased = TransectDiseased,
+      NumColoniesNOTDiseased = TransectNotDiseased,
+      DiseasePrevalence = TransectPrev)
+  
+  DT::datatable(
+    disease_prev_transect_tab,
+    filter = "top",
+    class="compact stripe",
+    rownames= FALSE,
+    extensions=c('Buttons'),
+    options = list(
+      filter = "top",
+      selection = "multiple",
+      scrollX = TRUE,
+      autoWidth = TRUE,
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all") # larger column for TripName
+      )
+    )
+  )
+})
+
+dataTableOutput("out_disease_prev_transect_tab")
+tags$style("#out_disease_prev_transect_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
+``` 
+
+Cover & Bleaching Data {data-navmenu="Raw Data Tables"}
+====================================
+
+#### <font size="3">**Cover and Coral Bleaching**</font>
+
+```{r}
+output$out_cover_tab <- DT::renderDT({
+  Sys.sleep(0.75)
+  
+  shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
+  cov_tab <- rv$raw_dat %>% # for easier filtering
+    dplyr::mutate_at(c("ParkCode", "ReportingSite", "ReportingSiteName", "Site", "IsActive", "Purpose", "Category", "Subcategory", "FunctionalGroup", "Taxon", "BleachingCode", "VideoCertificationLevel"), as.factor) %>%
+    dplyr::mutate_at(c("Transect", "Year", "CountOfTaxon"), as.integer)
+  
+  DT::datatable(
+    cov_tab,
+    filter = "top",
+    class="compact stripe",
+    rownames= FALSE,
+    extensions=c('Buttons'),
+    options = list(
+      filter = "top",
+      selection = "multiple",
+      scrollX = TRUE,
+      autoWidth = TRUE,
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all"),
+        list(width = '210px', targets = c(10)) # larger column for TripName
+        )
+      )
+  )
+})
 dataTableOutput("out_cover_tab")
 tags$style("#out_cover_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ```
 
-### Disease Data
+Disease Data {data-navmenu="Raw Data Tables"}
+====================================
+
+#### <font size="3">**Coral Disease**</font>
 
 ```{r}
 output$out_disease_tab <- DT::renderDT({
+  Sys.sleep(0.75)
+  
   shiny::validate(
-    need(!is.null(rv$disease_df), message = "Please import new disease data or load an existing summary RDS file"))
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::req(!is.null(rv$disease_df))
   
+    disease_tab <- rv$disease_df %>% # for easier filtering
+    dplyr::mutate_at(c("ParkCode", "ReportingSite", "ReportingSiteName", "Site", "IsActive", "Purpose", "DiseaseCode", "DiseaseDescription", "Taxon", "CoralScientificName", "DiseaseCertificationLevel"), as.factor) %>%
+    dplyr::mutate_at(c("Transect", "ColonyNumber", "DiscoloredTissue", "NumOfBlemishes"), as.integer)
+  
   DT::datatable(
-    rv$disease_df,
+    disease_tab,
+    filter = "top",
     class="compact stripe",
     rownames= FALSE,
+    extensions=c('Buttons'),
     options = list(
-      pageLength = 20,
+      filter = "top",
+      selection = "multiple",
+      scrollX = TRUE,
       autoWidth = TRUE,
-      dom = 'Bfrtip',
-      buttons = c('copy', 'csv', 'excel', 'pdf'),
-      columnDefs = list(list(className = 'dt_center', targets = "_all"))
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all"))
       )
   )
 })
@@ -1622,25 +2005,44 @@ dataTableOutput("out_disease_tab")
 tags$style("#out_disease_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ```
 
-### Colony Counts Data
+Colony Counts Data {data-navmenu="Raw Data Tables"}
+====================================
+
+#### <font size="3">**Colony Counts**</font>
 
 ```{r}
 output$out_colcounts_tab <- DT::renderDT({
+  Sys.sleep(0.75)
+  
   shiny::validate(
-    need(!is.null(rv$colcounts_df), message = "Please import new colony counts data or load an existing summary RDS file"))
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::req(!is.null(rv$colcounts_df))
   
+  colcounts_tab <- rv$colcounts_df %>% # for easier filtering
+    dplyr::mutate_at(c("ParkCode", "ReportingSite", "ReportingSiteName", "Site", "IsActive", "Purpose", "ColCountsCertificationLevel"), as.factor) %>%
+    dplyr::mutate_at(c("Transect", "StonyCoralCount1", "StonyCoralCount2", "FireCoralCount1", "FireCoralCount2"), as.integer)
+  
   DT::datatable(
-    rv$colcounts_df,
+    colcounts_tab,
+    filter = "top",
     class="compact stripe",
     rownames= FALSE,
+    extensions=c('Buttons'),
     options = list(
-      pageLength = 20,
+      filter = "top",
+      selection = "multiple",
+      scrollX = TRUE,
       autoWidth = TRUE,
-      dom = 'Bfrtip',
-      buttons = c('copy', 'csv', 'excel', 'pdf'),
-      columnDefs = list(list(className = 'dt_center', targets = "_all"))
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all"),
+        list(width = '210px', targets = c(10)) # larger column for TripName
+        )
       )
   )
 })
