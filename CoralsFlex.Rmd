@@ -27,9 +27,6 @@ source("Corals.R")
 rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list = NULL, transect_counts_df = NULL, cover_CIs_df = NULL, bleach_CIs_df = NULL, disease_df = NULL, colcounts_df = NULL)
 
 rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_prev_subdat = NULL, disease_prev_subdat_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL)
-cat("line30")
-# 
-# rv <- readRDS("~/NPS PROJECTS_CURRENT/SFCN_CoralDash/TEST_coralsummary.RDS") # <<<<<<<<<<<<<<<<<<<< FOR TESTING ONLY
 
 tags$style("table {
            height: calc(100vh - 80px) !important;
@@ -45,7 +42,7 @@ FuncWarnTable <-function(colnam) {
   return(x_tab)
 }
 
-FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, y_text, which_showRSS, PC_blackwhite) {
+FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, set_ymax, y_text, which_showRSS, PC_blackwhite) {
   # Function to generate point plots with error bars
   #
   # Args:
@@ -78,7 +75,7 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, y_t
     } else {
       if(which_showRSS == "bleach") {
         p <- p + 
-          scale_color_manual(values = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), guide = guide_legend(override.aes = list(size=1.25)))
+          scale_color_manual(values = c("UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), guide = guide_legend(override.aes = list(size=1.25)))
       } else { # for cover plots
         p <- p +
         scale_color_manual(values = cbp1_assigned, guide = guide_legend(override.aes = list(size=1.25)))
@@ -94,8 +91,14 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, y_t
                        "one_loc_many_sub" = "~ RSS",
                        "one_sub_many_loc" = "~ NumerLevel")
   
+  if(free_ymax == FALSE & !is.null(set_ymax)) {
+    p <- p + ylim(0, set_ymax)
+  } else {
+    p <- p +
+    expand_limits(y = c(0, 1)) # y-axes must include 1
+  }
+  
   p <- p +
-    expand_limits(y = c(0, 1)) + # y-axes must include 1
     labs(x = "Year", y = y_text) +
     scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
     facet_wrap(as.formula(facet_vars), scales = if_else(free_ymax, "free_y", "fixed"), ncol = 1) +
@@ -231,7 +234,7 @@ FuncPlotBleach <- function(dat, yaxis_title) {
     
     ggplot(subset(plot_dat, RSS == i), aes(x = SurvDate, y = EstimCov, fill = NumerLevel)) +
     geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
-    scale_fill_manual(values = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), guide = "none") +
+    scale_fill_manual(values = c("UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), guide = "none") +
     scale_y_continuous(expand = c(0, 0)) +
     labs(title = " ", subtitle = paste0("Coral Bleaching at Site:  ", i), y = yaxis_title) + # adding blank title as hack to increase spacing between plots
     theme_bw(base_size = 14) +
@@ -251,7 +254,7 @@ FuncPlotBleach <- function(dat, yaxis_title) {
   
   plots_page <- patchwork::wrap_plots(plots_list, ncol = 1) +
     patchwork::plot_annotation(
-      title = "For surveys from Oct. 2005 to present, coral data with NA entry for 'Bleaching Code' are considered 'Unbleached' (UNBL)",
+      title = "From Oct. 2005 to present, coral data with NA for 'Bleaching Code' are considered 'Unbleached' (UNBL)",
       theme = theme(
         plot.title = element_text(size = 16)
       ))
@@ -353,7 +356,7 @@ observeEvent(eventExpr = input$summaryfile, {
   
   rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_prev_subdat = NULL, disease_prev_subdat_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL)
 
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
  
   showModal(modalDialog(
   title = "Done",
@@ -452,7 +455,7 @@ observeEvent(eventExpr = input$button_update_bleach, {
       if(input$sel_bleach_episodic == FALSE) Purpose == "Annual" else TRUE) %>%
     dplyr::mutate(
       Year = lubridate::year(SurvDate), # for stacked bar plots
-      NumerLevel = factor(NumerLevel, levels = c("NONCORAL", "NoData", "UNBL", "BL1", "BL2", "BL3", "BL4"))) %>%
+      NumerLevel = factor(NumerLevel, levels = c("NONCORAL", "UNBL", "BL1", "BL2", "BL3", "BL4"))) %>%
     arrange(RSS, SurvDate, NumerLevel)
   
   rv_param_temp$sel_bleach_showRSS <- input$sel_bleach_showRSS # make sure user selection doesn't automatically update plot page height
@@ -472,12 +475,12 @@ observeEvent(eventExpr = input$disease_none_button, {
 
 observeEvent(eventExpr = input$disease_tissue_loss_button, {
   shiny::req(!is.null(rv_param_temp$avail_diseases))
-    updateCheckboxGroupInput(session, "sel_diseases", label = "Select disease(s)", choices = rv_param_temp$avail_diseases, selected = intersect(c("BB", "SCTLD", "WB", "WPL", "WPX"), rv_param_temp$avail_diseases)) # select all tissue loss diseases that are among the available diseases
+    updateCheckboxGroupInput(session, "sel_diseases", label = "Select disease(s)", choices = rv_param_temp$avail_diseases, selected = intersect(c("BB", "SCTLD", "WB", "WPL", "WPX", "YB"), rv_param_temp$avail_diseases)) # select all tissue loss diseases that are among the available diseases. Also yellow-band, because that is measured as tissue loss disease
     })
 
 observeEvent(eventExpr = input$disease_discoloration_button, {
   shiny::req(!is.null(rv_param_temp$avail_diseases))
-    updateCheckboxGroupInput(session, "sel_diseases", label = "Select disease(s)", choices = rv_param_temp$avail_diseases, selected = intersect(c("DS", "YB"), rv_param_temp$avail_diseases)) # select all discoloration diseases that are among the available diseases
+    updateCheckboxGroupInput(session, "sel_diseases", label = "Select disease(s)", choices = rv_param_temp$avail_diseases, selected = intersect(c("DS"), rv_param_temp$avail_diseases)) # select all discoloration diseases that are among the available diseases
     })
 ``` 
 
@@ -791,7 +794,7 @@ wellPanel(
   
   renderUI({
     shiny::req(!is.null(rv$raw_dat), !is.null(input$sel_raw_sitescale), !is.null(input$sel_raw_showRSS), !is.null(input$sel_raw_categ), !is.null(input$sel_raw_episodic))
-cat("line795")
+
     date_opts <- rv$raw_dat %>%
       dplyr::mutate(RSS = get(input$sel_raw_sitescale)) %>%
       dplyr::filter(
@@ -801,10 +804,6 @@ cat("line795")
       dplyr::pull(SurvDate) %>%
       as.character()
    
-    # select_opts <- c(
-    #               switch(all(!is.null(input$sel_raw_dates[[1]]),  input$sel_raw_dates[[1]]>=min(date_opts, na.rm = TRUE))+1, min(date_opts, na.rm = TRUE), input$sel_raw_dates[[1]]),
-    #               switch(all(!is.null(input$sel_raw_dates[[2]]), input$sel_raw_dates[[2]]<=max(date_opts, na.rm = TRUE))+1, max(date_opts, na.rm = TRUE), input$sel_raw_dates[[2]])
-                # )
     sliderTextInput("sel_raw_dates",
                 label = "Compare % cover for two survey events (red lines on plots)",
                 choices = date_opts,
@@ -967,9 +966,8 @@ wellPanel(
   
   renderUI({ # if estimating cover for a level other than Category, restrict summaries to a single Category
     shiny::req(!is.null(rv$cover_CIs_df), !is.null(input$sel_lev), !is.null(input$sel_showRSS))
-    cat("line925")
     shiny::req(input$sel_lev != "Category")
-    cat("line926")
+
     avail_categ <- sort(unique(rv$cover_CIs_df$Category[rv$cover_CIs_df$NumerGroup==input$sel_lev & rv$cover_CIs_df$RSS %in% input$sel_showRSS]))
     
     selectInput("sel_categ",
@@ -1043,7 +1041,19 @@ renderUI({
   checkboxInput("PC_blackwhite", label = "Plot in grayscale (can only handle up to 6 categories)", value = switch(is.null(input$PC_blackwhite)+1, input$PC_blackwhite, FALSE))
 })
 
-checkboxInput("free_ymax", label = "Allow y-axes scales to vary among plots", value = TRUE)
+checkboxInput("free_ymax", label = "Allow y-axes scales to vary among plots", value = FALSE)
+
+renderUI({
+  shiny::req(input$free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
+  numericInput("set_PC_ymax", label = "Set y-axis maximum for % cover", min = 1, max = 105, step = 1, value = switch(is.null(input$set_PC_ymax)+1, input$set_PC_ymax, NULL))
+})
+
+renderUI({
+  shiny::req(input$free_ymax == FALSE & input$sel_lev != "Category" & !is.null(rv$cover_CIs_df)) # this option is only shown when y-axes scales are not allowed to vary among plots
+  top_val <-max(rv$cover_CIs_df %>% dplyr::filter(DenomGroup == "CategoryCount") %>% dplyr::select(`90%CI_high`), na.rm = TRUE)
+  numericInput("set_RC_ymax", label = "Set y-axis maximum for relative cover", min = 1, max = plyr::round_any(max(rv$cover_CIs_df$`90%CI_high`[rv$cover_CIs_df$DenomGroup == "CategoryCount"], na.rm = TRUE), 5, f = ceiling), step = 1, value = switch(is.null(input$set_RC_ymax)+1, input$set_RC_ymax, NULL))
+})
+
 
 ```
 
@@ -1054,6 +1064,8 @@ checkboxInput("free_ymax", label = "Allow y-axes scales to vary among plots", va
 * Relative % cover is calculated relative to the category (e.g., CORAL)
 
 * Confidence intervals are bootstrapped. For a NORMALLY distributed characteristic, the 68% CI is equal to the mean cover estimate +/- 1 standard error.
+
+* To set y-axis maxima in graphs, uncheck 'Allow y-axes scales to vary among plots' in left-side panel, then enter maximum y-values. To set x-axis range in graphs, click and drag mouse over the desired range on x-axis. Double-click the graph to return to full x-axis range.
 
 ####
 ```{r cover_legend}
@@ -1087,9 +1099,9 @@ output$out_cover_plotly <- plotly::renderPlotly({
   shiny::validate(
     need(!is.null(rv_param_temp$cover_subdat), message = "From 'Data Filter Options' on the left, please select a grouping level and sublevel(s), then press the green 'UPDATE COVER SUMMARIES' button"))
   
-  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev))
+  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev), !is.null(input$free_ymax))
 
-rv_param_temp$cover_plot <- FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, y_text = paste0("Mean % Cover (", input$sel_error, ")"), which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)
+rv_param_temp$cover_plot <- FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, set_ymax = input$set_PC_ymax, y_text = paste0("Mean % Cover (", input$sel_error, ")"), which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)
 
 rv_param_temp$cover_plot$plot %>% hide_legend(.)
 })
@@ -1111,13 +1123,13 @@ output$out_RC_plotly <- plotly::renderPlotly({
   shiny::validate(
     need(!is.null(rv_param_temp$cover_subdat), message = "Relative cover is estimated when the grouping level is 'Functional Group' or 'Taxon' with at least one selected sublevel. Press the green 'UPDATE COVER SUMMARIES' button after selection."))
   
-  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_lev), !is.null(rv_param_temp$sel_sublev))
+  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_lev), !is.null(rv_param_temp$sel_sublev), !is.null(input$free_ymax))
   
   shiny::validate(
     need(rv_param_temp$sel_lev!="Category", message = "Relative cover is estimated only when the grouping level is 'Functional Group' or 'Taxon'")
   )
   
-  FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "CategoryCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, y_text = paste0("Mean % Relative Cover (", input$sel_error, ")"), which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)$plot %>% hide_legend(.)
+  FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "CategoryCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, set_ymax = input$set_RC_ymax, y_text = paste0("Mean % Relative Cover (", input$sel_error, ")"), which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)$plot %>% hide_legend(.)
 
 })
 
@@ -1126,7 +1138,7 @@ plotlyOutput("out_RC_plotly")
 </div>
 </div>
 
-% Cover (data & est'd CI) {data-navmenu="Group Cover per Site"}
+% Cover (table of %cover w/CI) {data-navmenu="Group Cover per Site"}
 ======================================  
 
 #### <font size="3">**This table corresponds with the left-side panel of the line graphs. The data shown are mean transect % cover and various bootstrapped confidence intervals by site and category/functional group/taxon level.**</font>
@@ -1137,7 +1149,7 @@ plotlyOutput("out_RC_plotly")
 
 ```{r}
 output$out_plot_cover_tab <- DT::renderDT({
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1181,7 +1193,7 @@ dataTableOutput("out_plot_cover_tab")
 tags$style("#out_plot_cover_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ```
 
-Relative % Cover (data & est'd CI) {data-navmenu="Group Cover per Site"} 
+Relative % Cover (table of relative cover w/CI) {data-navmenu="Group Cover per Site"} 
 ======================================  
 
 #### <font size="3">**This table corresponds with the right-side panel of the line graphs. The data shown are relative % cover and various bootstrapped confidence intervals by site and functional group/taxon level.**</font>
@@ -1192,7 +1204,7 @@ Relative % Cover (data & est'd CI) {data-navmenu="Group Cover per Site"}
 
 ```{r}
 output$out_plot_relcover_tab <- DT::renderDT({
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1303,6 +1315,17 @@ renderUI({
 })
 
 checkboxInput("bleach_free_ymax", label = "Allow y-axes scales to vary among plots", value = FALSE)
+
+renderUI({
+  shiny::req(input$bleach_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
+  numericInput("set_bleach_PC_ymax", label = "Set y-axis maximum for % cover", min = 1, max = 105, step = 1, value = switch(is.null(input$set_bleach_PC_ymax)+1, input$set_bleach_PC_ymax, NULL))
+})
+
+renderUI({
+  shiny::req(input$bleach_free_ymax == FALSE & !is.null(rv$bleach_CIs_df)) # this option is only shown when y-axes scales are not allowed to vary among plots
+  top_val <-max(rv$bleach_CIs_df %>% dplyr::filter(DenomGroup == "CategoryCount") %>% dplyr::select(`90%CI_high`), na.rm = TRUE)
+  numericInput("set_bleach_RC_ymax", label = "Set y-axis maximum for relative cover", min = 1, max = plyr::round_any(max(rv$bleach_CIs_df$`90%CI_high`[rv$bleach_CIs_df$DenomGroup == "CategoryCount"], na.rm = TRUE), 5, f = ceiling), step = 1, value = switch(is.null(input$set_bleach_RC_ymax)+1, input$set_bleach_RC_ymax, NULL))
+})
 ```
 
 Coral Bleaching
@@ -1312,6 +1335,8 @@ Coral Bleaching
 * Relative % cover is calculated as % of coral cover in each bleach level
 
 * Confidence intervals are bootstrapped. For a NORMALLY distributed characteristic, the 68% CI is equal to the mean cover estimate +/- 1 standard error.
+
+* To set y-axis maxima in graphs, uncheck 'Allow y-axes scales to vary among plots' in left-side panel, then enter maximum y-values. To set x-axis range in graphs, click and drag mouse over the desired range on x-axis. Double-click the graph to return to full x-axis range.
 
 ####
 ```{r bleach_legend}
@@ -1346,7 +1371,7 @@ output$out_bleachPC_plotly <- plotly::renderPlotly({
  
   shiny::req(!is.null(input$sel_bleach_error), !is.null(input$bleach_free_ymax), !is.null(rv_param_temp$sel_bleach_showRSS))
   
-  rv_param_temp$bleach_plot <- FuncPlotPointCI(dat = rv_param_temp$bleach_subdat, denom = "TransectCount", sel_error = input$sel_bleach_error, sel_splitplot = "one_loc_many_sub", free_ymax = input$bleach_free_ymax, y_text = paste0("% Cover of Site (", input$sel_bleach_error, ")"), which_showRSS = "bleach", PC_blackwhite = FALSE)
+  rv_param_temp$bleach_plot <- FuncPlotPointCI(dat = rv_param_temp$bleach_subdat, denom = "TransectCount", sel_error = input$sel_bleach_error, sel_splitplot = "one_loc_many_sub", free_ymax = input$bleach_free_ymax, set_ymax = input$set_bleach_PC_ymax, y_text = paste0("% Cover of Site (", input$sel_bleach_error, ")"), which_showRSS = "bleach", PC_blackwhite = FALSE)
   
   rv_param_temp$bleach_plot$plot %>% hide_legend(.)
 })
@@ -1370,7 +1395,7 @@ output$out_bleachRC_plotly <- plotly::renderPlotly({
   
   shiny::req(!is.null(input$sel_bleach_error), !is.null(input$bleach_free_ymax), !is.null(rv_param_temp$sel_bleach_showRSS))
   
-  FuncPlotPointCI(dat = rv_param_temp$bleach_subdat, denom = "CategoryCount", sel_error = input$sel_bleach_error, sel_splitplot = "one_loc_many_sub", free_ymax = input$bleach_free_ymax, y_text = paste0("% Cover of Corals (", input$sel_bleach_error, ")"), which_showRSS = "bleach", PC_blackwhite = FALSE)$plot %>% hide_legend(.)
+  FuncPlotPointCI(dat = rv_param_temp$bleach_subdat, denom = "CategoryCount", sel_error = input$sel_bleach_error, sel_splitplot = "one_loc_many_sub", free_ymax = input$bleach_free_ymax, set_ymax = input$set_bleach_RC_ymax, y_text = paste0("% Cover of Corals (", input$sel_bleach_error, ")"), which_showRSS = "bleach", PC_blackwhite = FALSE)$plot %>% hide_legend(.)
   
 })
 
@@ -1383,7 +1408,7 @@ plotlyOutput("out_bleachRC_plotly")
 ======================================
 % Cover and Relative Cover per Site
 -------------------------------------
-#### <font size="3">**These stacked bar plots show % cover by bleach level (left-side panel) and relative % cover by bleach level (right-side panel) for each selected site and category/functional group/taxon level**</font>
+#### <font size="3">**These stacked bar plots show % cover by bleach level (left-side panel) and relative % cover by bleach level (right-side panel) for each selected site and category/functional group/taxon level [PLOTS ARE SLOW TO DRAW - PLEASE BE PATIENT]**</font>
 
 ####
 ```{r}
@@ -1413,12 +1438,14 @@ output$out_bleach_stackplot <- renderPlot({
   
   shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale))
 
+# saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
+# saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS")
+
   FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "TransectCount"), yaxis_title = "% Cover of Site")
 },
       height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_bleach_showRSS));length(rv_param_temp$sel_bleach_showRSS)*350}
   )
 
-# tags$style("#out_bleach_stackplot{height:100vh;overflow-y:scroll}")
 plotOutput("out_bleach_stackplot")
 ```
 
@@ -1444,7 +1471,7 @@ plotOutput("out_bleach_stackplot2")
 </div>
 </div>
   
-% Bleaching (data & est'd CI) {data-navmenu="Coral Bleaching per Site"}
+% Bleaching (table of %cover w/CI) {data-navmenu="Coral Bleaching per Site"}
 ======================================
 #### <font size="3">**This table corresponds with the left-side panel of the coral bleaching line graphs. For each site, the data shown are % cover by bleach level and various bootstrapped confidence intervals.**</font>
 
@@ -1455,7 +1482,7 @@ plotOutput("out_bleach_stackplot2")
 
 ```{r}
 output$out_bleach_tab <- DT::renderDT({
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1500,7 +1527,7 @@ dataTableOutput("out_bleach_tab")
 tags$style("#out_bleach_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ``` 
 
-Relative % Bleaching (data & est'd CI) {data-navmenu="Coral Bleaching per Site"}
+Relative % Bleaching (table of relative cover w/CI) {data-navmenu="Coral Bleaching per Site"}
 ======================================
 #### <font size="3">**This table corresponds with the right-side panel of the coral bleaching line graphs. For each site, the data shown are relative % cover by bleach level and various bootstrapped confidence intervals.**</font>
 
@@ -1510,7 +1537,7 @@ Relative % Bleaching (data & est'd CI) {data-navmenu="Coral Bleaching per Site"}
 
 ```{r}
 output$out_relbleach_tab <- DT::renderDT({
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1628,7 +1655,7 @@ wellPanel(
   
   actionButton("disease_none_button", "Select None", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px"),
   
-  actionButton("disease_tissue_loss_button", "Select Tissue Loss Diseases", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px"),
+  actionButton("disease_tissue_loss_button", "Select Tissue Loss Diseases & YB", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px"),
   
   actionButton("disease_discoloration_button", "Select Discoloration Diseases", style="background-color:#ededed; color:black; display:inline-block; border:1px solid #dcdcdc; padding: 3px"),
 
@@ -1732,7 +1759,7 @@ plotlyOutput("out_disease_prev_plotly")
 
 Coral Disease Counts & Prevalence per Site
 -------------------------------------
-#### <font size="3">**These stacked bar plots show count of diseased colonies (left-side panel) and disease prevalence (right-side panel) for each selected site**</font>
+#### <font size="3">**These stacked bar plots show count of diseased colonies (left-side panel) and disease prevalence (right-side panel) for each selected site [PLOTS ARE SLOW TO DRAW - PLEASE BE PATIENT]**</font>
 
 ####
 ```{r}
@@ -1824,7 +1851,7 @@ Disease Counts & Prevalence (summed to SITE) {data-navmenu="Coral Disease per Si
 
 ```{r}
 output$out_disease_prev_tab <- DT::renderDT({
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1874,7 +1901,7 @@ Disease Counts & Prevalence (summed to TRANSECT) {data-navmenu="Coral Disease pe
 
 ```{r}
 output$out_disease_prev_transect_tab <- DT::renderDT({
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1925,7 +1952,7 @@ Cover & Bleaching Data {data-navmenu="Raw Data Tables"}
 
 ```{r}
 output$out_cover_tab <- DT::renderDT({
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1968,7 +1995,7 @@ Disease Data {data-navmenu="Raw Data Tables"}
 
 ```{r}
 output$out_disease_tab <- DT::renderDT({
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -2012,7 +2039,7 @@ Colony Counts Data {data-navmenu="Raw Data Tables"}
 
 ```{r}
 output$out_colcounts_tab <- DT::renderDT({
-  Sys.sleep(0.75)
+  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
