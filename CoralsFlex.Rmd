@@ -26,7 +26,7 @@ source("Corals.R")
 
 rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list = NULL, transect_counts_df = NULL, cover_CIs_df = NULL, bleach_CIs_df = NULL, disease_df = NULL, colcounts_df = NULL)
 
-rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_subdat = NULL, disease_subdat_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_site = NULL, lesion_transect = NULL)
+rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_site = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_site = NULL, lesion_transect = NULL)
 
 tags$style("table {
            height: calc(100vh - 80px) !important;
@@ -35,6 +35,7 @@ tags$style("table {
 ```
 
 ```{r functions}
+
 FuncWarnTable <-function(colnam) {
   validate(need(!is.null(rv$warn_list), message = FALSE))
   x_tab <- rv$warn_list[[colnam]]
@@ -120,12 +121,12 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, set
   gp <- gp %>% layout(
     margin = list(
       t=80,
-      b=70,
+      b=90,
       l= 100,
       r=15))
   
   gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.12 # move y-axis title more to the left
-  gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.02 # move x-axis title down more. This affects the x-axis title specified in ggplot
+  gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.03 # move x-axis title down more. This affects the x-axis title specified in ggplot
   
   return_list <- list(plot = gp, legend = cov_legend)
   
@@ -151,8 +152,8 @@ FuncPlotPointDisease <- function(dat, metric, free_ymax, set_ymax, y_text, disea
     p <- 
       ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric, colour = Transect)) +
       scale_color_viridis_d(name = metric, direction=-1, guide = guide_legend(override.aes = list(size=1.25))) +
-      geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", TransectDiseased, "<br>Avg Number of Colonies: ", StonyCoralCountAVG, "<br>Disease Prevalence: ", TransectPrev))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
-    geom_line(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", TransectDiseased, "<br>Avg Number of Colonies: ", StonyCoralCountAVG, "<br>Disease Prevalence: ", TransectPrev)), group = "Transect") # need to add this grouping to geom_line, otherwise the text will cause it to group incorrectly. Need to add text b/c otherwise the line will not show when plotly tooltip is set to "text"
+      geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", TransectDiseased, "<br>Stony Coral Count 1: ", StonyCoralCount1, "<br> Stony Coral Count 2: ", StonyCoralCount2, "<br>DIFF Stony Coral Count: ", StonyCoralCountDIFF, "<br>Avg Stony Coral Count: ", StonyCoralCountAVG, "<br>Disease Prevalence: ", TransectPrev))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+    geom_line(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", TransectDiseased, "<br>Stony Coral Count 1: ", StonyCoralCount1, "<br> Stony Coral Count 2: ", StonyCoralCount2, "<br>DIFF Stony Coral Count: ", StonyCoralCountDIFF, "<br>Avg Stony Coral Count: ", StonyCoralCountAVG, "<br>Disease Prevalence: ", TransectPrev)), group = "Transect") # need to add this grouping to geom_line, otherwise the text will cause it to group incorrectly. Need to add text b/c otherwise the line will not show when plotly tooltip is set to "text"
   } else {
     p <- 
       ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric)) +
@@ -348,7 +349,7 @@ FuncPlotBleach <- function(dat, yaxis_title, free_ymax) {
     return(plots_page)
 }
 
-FuncPlotDisease <- function(dat, y_col, yaxis_title, title_text) {
+FuncPlotDisease <- function(dat, y_col, yaxis_title) {
   # NOT interactive because with interactive subplots of facet plots, the y-axis was not showing in the correct location 
   # Function to stacked bar plots of site totals
   #
@@ -386,12 +387,7 @@ FuncPlotDisease <- function(dat, y_col, yaxis_title, title_text) {
           panel.spacing = unit(-0.05, "lines"))
     })
   
-  plots_page <- patchwork::wrap_plots(plots_list, ncol = 1) +
-    patchwork::plot_annotation(
-      title = title_text,
-      theme = theme(
-        plot.title = element_text(size = 16)
-      ))
+  plots_page <- patchwork::wrap_plots(plots_list, ncol = 1)
   
   return(plots_page)
 }
@@ -418,7 +414,7 @@ observeEvent(eventExpr = input$button_import, {
   withProgress(message = "Please be patient. Calculating something wonderful...", value = 0, {
     FuncCorals(filenam = input$filenam$datapath, sitesfilenam = input$sitesfilenam$datapath, diseasefilenam = input$diseasefilenam$datapath, colcountsfilenam = input$colcountsfilenam$datapath, out_prefix = input$out_prefix)
     
-    rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_subdat = NULL, disease_subdat_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_site = NULL, lesion_transect = NULL)
+    rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_site = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_site = NULL, lesion_transect = NULL)
     
      showModal(modalDialog(
         title = "Done",
@@ -440,7 +436,7 @@ observeEvent(eventExpr = input$summaryfile, {
 
   rv <- sapply(names(out), FUN = function(i) {rv[[i]] <- out[[i]]}, simplify = FALSE)
   
-  rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_subdat = NULL, disease_subdat_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_site = NULL, lesion_transect = NULL)
+  rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_site = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_site = NULL, lesion_transect = NULL)
 
   Sys.sleep(0.6)
  
@@ -523,7 +519,7 @@ observeEvent(eventExpr = input$button_update_cover, {
   rv_param_temp$sel_lev <- input$sel_lev
   rv_param_temp$sel_sublev <- input$sel_sublev
 
-  # shinyjs::hideElement("wp_cover_criteria")
+  Sys.sleep(0.75)
 })
 ```
 
@@ -575,9 +571,8 @@ observeEvent(eventExpr = input$disease_discoloration_button, {
 observeEvent(eventExpr = input$button_update_disease, {
   
   shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(input$sel_disease_sitescale), !is.null(input$sel_disease_showRSS), !is.null(input$sel_disease_episodic), !is.null(input$sel_diseases))
-
-  # saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
-# saveRDS(isolate(reactiveValuesToList(rv_param_temp)), "temp_rv_param_temp.RDS")
+  
+  rv_param_temp$sel_disease_showRSS <- rv_param_temp$disease_site <- rv_param_temp$disease_transect <- rv_param_temp$lesion_site <- rv_param_temp$lesion_transect <- NULL
 
   # Subset of disease data to use
   diseases <- rv$disease_df %>%
@@ -623,7 +618,7 @@ observeEvent(eventExpr = input$button_update_disease, {
      ungroup()
    
    # Site-level disease counts and prevalence (summed across transects for a survey event)
-   disease_subdat <- disease_transect %>%
+   disease_site <- disease_transect %>%
      dplyr::select(ParkCode, RSS, ReportingSite, ReportingSiteName, Site, IsActive, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel, TransectDiseased, TransectNotDiseased, StonyCoralCountAVG) %>%
      dplyr::group_by(ParkCode, RSS, ReportingSite, ReportingSiteName, Site, IsActive, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel) %>%
      dplyr::summarize(
@@ -635,29 +630,38 @@ observeEvent(eventExpr = input$button_update_disease, {
      ungroup()
    
    # Lesion counts and area
-   lesion_transect <- diseases %>%
-     dplyr::filter(DiseaseCode != "DS" & !is.na(LesionLength) & !is.na(LesionWidth))  %>% # some Dark Spot have lesion length and width entered but should not be considered a lesion disease
-     dplyr::mutate(LesionArea = LesionLength * LesionWidth) %>%
-     dplyr::group_by(TransectSurveyID) %>%
-     dplyr::mutate(
-       TransectLesionCounts = n(),
-       TransectLesionArea = sum(LesionArea)) %>%
-     dplyr::select(ParkCode, ReportingSite, Site, IsActive, Transect, SurvDate, TransectSurveyID, Purpose, ProtocolVersion, DiseaseCertificationLevel, RSS, TransectLesionCounts, TransectLesionArea) %>%
-     dplyr::distinct()
-   
-   lesion_site <- lesion_transect %>%
+   lesion_dat <- diseases %>%
+     dplyr::filter(DiseaseCode != "DS" & !is.na(LesionLength) & !is.na(LesionWidth)) # some Dark Spot have lesion length and width entered but should not be considered a lesion disease
+   if(nrow(lesion_dat) > 0) {
+     lesion_transect <- lesion_dat %>%
+       dplyr::mutate(LesionArea = LesionLength * LesionWidth) %>%
+       dplyr::group_by(TransectSurveyID) %>%
+       dplyr::mutate(
+         TransectLesionCounts = n(),
+         TransectLesionArea = sum(LesionArea)) %>%
+       dplyr::select(ParkCode, ReportingSite, Site, IsActive, Transect, SurvDate, TransectSurveyID, Purpose, ProtocolVersion, DiseaseCertificationLevel, RSS, TransectLesionCounts, TransectLesionArea) %>%
+       dplyr::distinct()
+     
+     lesion_site <- lesion_transect %>%
      dplyr::select(ParkCode, ReportingSite, Site, IsActive, SurvDate, Purpose, ProtocolVersion, DiseaseCertificationLevel, RSS, TransectLesionCounts, TransectLesionArea) %>%
      dplyr::group_by(ParkCode, ReportingSite, Site, IsActive, SurvDate, Purpose, ProtocolVersion, DiseaseCertificationLevel, RSS) %>%
      dplyr::summarize(
        SiteLesionCounts = sum(TransectLesionCounts),
        SiteLesionArea = sum(TransectLesionArea)
      )
+   } else {
+       lesion_site <- lesion_transect <- NULL
+     }
+  
   
    rv_param_temp$sel_disease_showRSS <- input$sel_disease_showRSS
-   rv_param_temp$disease_subdat <- disease_subdat
-   rv_param_temp$disease_subdat_transect <- disease_transect
+   rv_param_temp$disease_site <- disease_site
+   rv_param_temp$disease_transect <- disease_transect
    rv_param_temp$lesion_site <- lesion_site
    rv_param_temp$lesion_transect <- lesion_transect
+  
+   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
+   saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
    })
 ```
 
@@ -1034,7 +1038,6 @@ br()
 
 h4("Data Filter Options")
 
-# shinyjs::hidden( # initially hide this well panel
 wellPanel(
   id = "wp_cover_criteria",
 
@@ -1109,8 +1112,6 @@ wellPanel(
       as.character() %>%
       unique() %>%
       sort()
-      
-  # sublev_default <- if_else("CORAL" %in% rv_param_temp$avail_sublevs, "CORAL", rv_param_temp$avail_sublevs[1])
 
   checkboxGroupInput("sel_sublev", 
                      label = "Select sublevel(s)",
@@ -1138,8 +1139,6 @@ wellPanel(
 ```{r input_cover_format}
 
 h4("Figure Format Options (plots update immediately)")
-
-br()
 
 renderUI({
   radioButtons("sel_error",
@@ -1278,7 +1277,6 @@ plotlyOutput("out_RC_plotly")
 
 ```{r}
 output$out_plot_cover_tab <- DT::renderDT({
-  Sys.sleep(0.75)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1331,7 +1329,6 @@ Relative % Cover (table of relative cover w/CI) {data-navmenu="Group Cover per S
 
 ```{r}
 output$out_plot_relcover_tab <- DT::renderDT({
-  Sys.sleep(0.75)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1374,7 +1371,7 @@ dataTableOutput("out_plot_relcover_tab")
 tags$style("#out_plot_relcover_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ```
 
-% Coral Bleaching (stacked bar plots) {data-navmenu="Coral Bleaching per Site"}
+% Coral Bleaching (stacked bar plots) {data-navmenu="Coral Bleaching"}
 ======================================
 Inputs {.sidebar data-width=300}
 -------------------------------------
@@ -1383,7 +1380,6 @@ br()
 
 h4("Data Filter Options")
 
-# shinyjs::hidden( # initially hide this well panel
 wellPanel(
   id = "wp_bleach_criteria",
   
@@ -1431,8 +1427,6 @@ wellPanel(
 
 h4("Figure Format Options (plots update immediately)")
 
-br()
-
 checkboxInput("bleach_free_ymax", label = "Allow y-axes scales to vary among `% cover of site` plots", value = TRUE)
 ```
 
@@ -1441,7 +1435,7 @@ checkboxInput("bleach_free_ymax", label = "Allow y-axes scales to vary among `% 
 #### <font size="3">**These stacked bar plots show % cover by bleach level (left-side panel) and relative % cover by bleach level (right-side panel) for each selected site and category/functional group/taxon level**</font>
 
 <span style="font-size:18px; color:red;">
-    PLOTS ARE SLOW TO DRAW - PLEASE BE PATIENT 
+    STACKED BAR PLOTS ARE SLOW TO DRAW - PLEASE BE PATIENT 
 </span>
 
 * % cover is calculated as # of survey points in that level in that transect, divided by the adjusted number of survey points in the transect (for that survey event). The AVERAGE of the transect % covers for that (reporting) site-survey event is shown by the bar height for that bleach level.
@@ -1500,14 +1494,13 @@ output$out_bleach_stackplot2 <- renderPlot({
       height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_bleach_showRSS));length(rv_param_temp$sel_bleach_showRSS)*350}
   )
 
-# tags$style("#out_bleach_stackplot2{height:100vh;overflow-y:scroll}")
 plotOutput("out_bleach_stackplot2")
 
 ```
 </div>
 </div>
   
-% Bleaching (table of %cover w/CI) {data-navmenu="Coral Bleaching per Site"}
+% Bleaching (table of %cover w/CI) {data-navmenu="Coral Bleaching"}
 ======================================
 #### <font size="3">**This table corresponds with the left-side panel of the coral bleaching stacked bar graphs, but also provides confidence intervals. For each site, the data shown are % cover by bleach level and various bootstrapped confidence intervals.**</font>
 
@@ -1517,7 +1510,6 @@ plotOutput("out_bleach_stackplot2")
 
 ```{r}
 output$out_bleach_tab <- DT::renderDT({
-  Sys.sleep(0.75)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1562,7 +1554,7 @@ dataTableOutput("out_bleach_tab")
 tags$style("#out_bleach_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ``` 
 
-Relative % Bleaching (table of relative cover w/CI) {data-navmenu="Coral Bleaching per Site"}
+Relative % Bleaching (table of relative cover w/CI) {data-navmenu="Coral Bleaching"}
 ======================================
 #### <font size="3">**This table corresponds with the right-side panel of the coral bleaching line graphs, but also provides confidence intervals. For each site, the data shown are relative % cover by bleach level and various bootstrapped confidence intervals.**</font>
 
@@ -1572,7 +1564,6 @@ Relative % Bleaching (table of relative cover w/CI) {data-navmenu="Coral Bleachi
 
 ```{r}
 output$out_relbleach_tab <- DT::renderDT({
-  Sys.sleep(0.75)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1617,7 +1608,7 @@ dataTableOutput("out_relbleach_tab")
 tags$style("#out_relbleach_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ``` 
 
-% Coral Disease Counts & Prevalence (line graphs) {data-navmenu="Coral Disease per Site"}
+Disease Counts {data-navmenu="Coral Disease"}
 ======================================
 Inputs {.sidebar data-width=300}
 -------------------------------------
@@ -1626,7 +1617,6 @@ br()
 
 h4("Data Filter Options")
 
-# shinyjs::hidden( # initially hide this well panel
 wellPanel(
   id = "wp_disease_criteria",
   
@@ -1642,8 +1632,6 @@ wellPanel(
                  choiceValues = list("ReportingSite", "Site"),
                  selected = switch(is.null(input$sel_disease_sitescale)+1, input$sel_disease_sitescale, "Site"))
   }),
-  
-  br(),
   
     tags$div(renderText({
     shiny::req(!is.null(input$sel_bleach_sitescale))
@@ -1706,42 +1694,35 @@ wellPanel(
 
 h4("Figure Format Options (plots update immediately)")
 
-br()
-
 checkboxInput("disease_by_transect", label = "Show separate line for each transect (line graphs only)", value = FALSE)
 
 checkboxInput("disease_free_ymax", label = "Allow y-axes scales to vary among line graphs", value = TRUE)
 
 renderUI({
-  shiny::req(!is.null(rv_param_temp$disease_subdat), input$disease_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
-  top_count <-max(rv_param_temp$disease_subdat$SiteDiseased, na.rm = TRUE) %>% plyr::round_any(., 5, f = ceiling)
+  shiny::req(!is.null(rv_param_temp$disease_site), input$disease_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
+  top_count <-max(rv_param_temp$disease_site$SiteDiseased, na.rm = TRUE) %>% plyr::round_any(., 5, f = ceiling)
   numericInput("set_disease_count_ymax", label = "Set y-axis maximum for diseased colonies count line graphs", min = 1, max = top_count, step = 1, value = top_count)
-})
-
-renderUI({
-  shiny::req(!is.null(rv_param_temp$disease_subdat_transect), input$disease_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
-  top_prev <-max(rv_param_temp$disease_subdat_transect$TransectPrev, na.rm = TRUE) %>% plyr::round_any(., 0.2, f = ceiling)
-  numericInput("set_disease_prev_ymax", label = "Set y-axis maximum for disease prevalence line graphs", min = 0.1, max = top_prev, step = 0.1, value = top_prev)
 })
 ```
 
-Coral Disease
+Disease Counts
 -------------------------------------
-#### <font size="3">**These line graphs show count of diseased colonies (left-side panel) and disease prevalence (right-side panel) by transect or site**</font>
 
-* Counts and prevalence are summaries of the survey data collected from sample transects, without estimates of statistical error.
+#### <font size="3">**These figures show count of diseased colonies, summed over selected diseases.**</font>
+
+<span style="font-size:18px; color:red;">
+    STACKED BAR PLOTS ARE SLOW TO DRAW - PLEASE BE PATIENT 
+</span>
+
+* Disease counts are summaries of the survey data collected from sample transects, without inference to the study site (therefore, no estimates of statistical error).
 
 * All coral colonies that overlap survey transects are included. See protocol for how "coral colony" is defined.
-
-<span style="font-size:14px; color:red;">
-    NOTE: Disease prevalence is calculated as NUMBER OF CORAL COLONIES WITH DISEASE (numerator) divided by the COUNT OF STONY CORAL COLONIES (denominator--typically, average of two independent counts), expressed as a percentage. Numerator and denominator counts may be conducted by different persons. 
-</span>
 
 ####
 <div class="flex-container">
 <div class="flex-left">
   
-<center><h3>Number of Diseased Coral Colonies (Raw Survey Data)</h3></center>
+<center><h3>Number of Diseased Coral Colonies Along Transects</h3></center>
 <br>
 ```{r plot_disease_count}
 output$out_disease_count_plotly <- plotly::renderPlotly({
@@ -1750,11 +1731,11 @@ output$out_disease_count_plotly <- plotly::renderPlotly({
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::validate(
-    need(!is.null(rv_param_temp$disease_subdat) & !is.null(rv_param_temp$disease_subdat_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
+    need(!is.null(rv_param_temp$disease_site) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
   
   shiny::req(!is.null(input$disease_free_ymax), !is.null(rv_param_temp$sel_disease_showRSS))
   
-  rv_param_temp$disease_count_plot <- FuncPlotPointDisease(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$disease_subdat, rv_param_temp$disease_subdat_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SiteDiseased", "TransectDiseased"), free_ymax = input$disease_free_ymax, set_ymax = input$set_disease_count_ymax, y_text = "Number of Diseased Coral Colonies Detected", disease_by_transect = input$disease_by_transect)
+  rv_param_temp$disease_count_plot <- FuncPlotPointDisease(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$disease_site, rv_param_temp$disease_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SiteDiseased", "TransectDiseased"), free_ymax = input$disease_free_ymax, set_ymax = input$set_disease_count_ymax, y_text = "Number of Diseased Coral Colonies Detected", disease_by_transect = input$disease_by_transect)
   
   rv_param_temp$disease_count_plot$plot %>% hide_legend(.)
 })
@@ -1764,46 +1745,90 @@ plotlyOutput("out_disease_count_plotly")
 </div>
 <div class="flex-right">
   
-<center><h3>Coral Disease Prevalence (Raw Survey Data)</h3></center>
+<center><h3>Number of Diseased (red) and Non-Diseased (black) Coral Colonies Along Transects</h3></center>
 <br>
-```{r plot_disease_prev}
-output$out_disease_prev_plotly <- plotly::renderPlotly({
+
+```{r barplot_disease_count}
+output$out_disease_count_stackplot <- renderPlot({
+  
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::validate(
-    need(!is.null(rv_param_temp$disease_subdat) & !is.null(rv_param_temp$disease_subdat_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
- 
-  shiny::req(!is.null(input$disease_free_ymax), !is.null(rv_param_temp$sel_disease_showRSS))
+    need(!is.null(rv_param_temp$disease_site) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
   
-  rv_param_temp$disease_prev_plot <- FuncPlotPointDisease(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$disease_subdat, rv_param_temp$disease_subdat_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SitePrev", "TransectPrev"), free_ymax = input$disease_free_ymax, set_ymax = input$set_disease_prev_ymax, y_text = "% of Coral Colonies with Disease", disease_by_transect = input$disease_by_transect)
+  disease_counts_dat <- rv_param_temp$disease_site %>%
+    ungroup() %>%
+    dplyr::select(RSS, Year, SurvDate, Diseased = SiteDiseased, NotDiseased = SiteNotDiseased) %>%
+    dplyr::arrange(RSS, SurvDate) %>%
+    dplyr::mutate(SurvDate = as.factor(SurvDate)) %>% # this is for the bar charts
+    tidyr::pivot_longer(cols = c("Diseased", "NotDiseased"), names_to = "DiseaseStatus", values_to = "NumColonies")
   
-  rv_param_temp$disease_prev_plot$plot %>% hide_legend(.)
-})
-plotlyOutput("out_disease_prev_plotly")
+  shiny::req(!is.null(disease_counts_dat))
+  
+  FuncPlotDisease(dat = disease_counts_dat, y_col = "NumColonies", yaxis_title = "Number of Coral Colonies")
+},
+  height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$disease_site) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the line graphs page, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_disease_showRSS));150+length(rv_param_temp$sel_disease_showRSS)*250}
+)
+
+plotOutput("out_disease_count_stackplot")
 ```
+
 </div>
 </div>
 
-Lesion Counts & Area (line graphs) {data-navmenu="Coral Disease per Site"}
+Lesion Counts & Area {data-navmenu="Coral Disease"}
 ======================================
-Lesions
--------------------------------------
-#### <font size="3">**These line graphs show count of disease lesions (left-side panel) and area of disease lesions (right-side panel) by transect or site**</font>
 
-* Counts and area are summaries of the survey data collected from sample transects, without estimates of statistical error.
+Inputs {.sidebar data-width=300}
+-------------------------------------
+
+#### <font size="3">**These line graphs show count and area of disease lesions, summed over selected tissue loss (or YB) diseases.**</font>
+
+* Lesion metrics are shown only for tissue loss diseases and YB (does not include blemishes of discoloration diseases such as Dark Spot).
+
+* Lesion counts and area are summaries of the survey data collected along sample transects, without inference to the study site (therefore, no estimates of statistical error).
+
+* Lesion area is calculated as (longest) length X (widest) width of lesion, so likely overestimates actual area.
 
 * All coral colonies that overlap survey transects are included. See protocol for how "coral colony" is defined.
 
 <span style="font-size:14px; color:red;">
-    NOTE: Lesion area is not standardized by total coral area. 
+    NOTE: Lesion area is not standardized by coral area. In any year, low lesion area values may be due to low tissue loss disease OR due to low coral area along transect.
 </span>
+
+####
+
+```{r input_lesion_format}
+br()
+
+h4("Figure Format Options (plots update immediately)")
+
+checkboxInput("lesion_by_transect", label = "Show separate line for each transect", value = FALSE)
+
+checkboxInput("lesion_free_ymax", label = "Allow y-axes scales to vary among line graphs", value = TRUE)
+
+renderUI({
+  shiny::req(!is.null(rv_param_temp$lesion_site), !is.null(rv_param_temp$lesion_transect), input$lesion_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
+  top_lesion_count <-max(rv_param_temp$lesion_site$SiteLesionCounts, na.rm = TRUE) %>% plyr::round_any(., 5, f = ceiling)
+  numericInput("set_lesion_count_ymax", label = "Set y-axis maximum for lesion count", min = 1, max = top_lesion_count, step = 5, value = top_lesion_count)
+})
+
+renderUI({
+  shiny::req(!is.null(rv_param_temp$lesion_site), !is.null(rv_param_temp$lesion_transect), input$lesion_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
+  top_lesion_area <-max(rv_param_temp$lesion_site$SiteLesionArea, na.rm = TRUE) %>% plyr::round_any(., 10, f = ceiling)
+  numericInput("set_lesion_area_ymax", label = "Set y-axis maximum for lesion area", min = 0.1, max = top_lesion_area, step = 10, value = top_lesion_area)
+})
+```
+
+Lesion Counts & Area
+-------------------------------------
 
 ####
 <div class="flex-container">
 <div class="flex-left">
   
-<center><h3>Number of Disease Lesions (Raw Survey Data)</h3></center>
+<center><h3>Number of Disease Lesions Along Transects</h3></center>
 <br>
 ```{r plot_lesion_count}
 output$out_lesion_count_plotly <- plotly::renderPlotly({
@@ -1812,11 +1837,11 @@ output$out_lesion_count_plotly <- plotly::renderPlotly({
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::validate(
-    need(!is.null(rv_param_temp$lesion_site) & !is.null(rv_param_temp$lesion_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
+    need(!is.null(rv_param_temp$lesion_site), message = "From 'Data Filter Options', please select site(s) and at least one tissue loss disease or YB, then press the green 'UPDATE DISEASE SUMMARIES' button"))
   
-  shiny::req(!is.null(rv_param_temp$sel_disease_showRSS))
+  shiny::req(!is.null(rv_param_temp$sel_disease_showRSS), !is.null(input$lesion_free_ymax))
   
-  rv_param_temp$lesion_count_plot <- FuncPlotPointLesion(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$lesion_site, rv_param_temp$lesion_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SiteLesionCounts", "TransectLesionCounts"), free_ymax = TRUE, set_ymax = NULL, y_text = "Number of Disease Lesions Detected", disease_by_transect = input$disease_by_transect)
+  rv_param_temp$lesion_count_plot <- FuncPlotPointLesion(dat = switch((input$lesion_by_transect == TRUE)+1, rv_param_temp$lesion_site, rv_param_temp$lesion_transect), metric = switch((input$lesion_by_transect == TRUE)+1, "SiteLesionCounts", "TransectLesionCounts"), free_ymax = input$lesion_free_ymax, set_ymax = input$set_lesion_count_ymax, y_text = "Number of Disease Lesions Detected on Transects", disease_by_transect = input$lesion_by_transect)
   
   rv_param_temp$lesion_count_plot$plot %>% hide_legend(.)
 })
@@ -1826,7 +1851,7 @@ plotlyOutput("out_lesion_count_plotly")
 </div>
 <div class="flex-right">
   
-<center><h3>Lesion Area (Raw Survey Data)</h3></center>
+<center><h3>Summed Lesion Areas Along Transects</h3></center>
 <br>
 ```{r plot_lesion_area}
 output$out_lesion_area_plotly <- plotly::renderPlotly({
@@ -1834,11 +1859,11 @@ output$out_lesion_area_plotly <- plotly::renderPlotly({
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::validate(
-    need(!is.null(rv_param_temp$lesion_site) & !is.null(rv_param_temp$lesion_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
+    need(!is.null(rv_param_temp$lesion_site), message = "From 'Data Filter Options', please select site(s) and at least one tissue loss disease or YB, then press the green 'UPDATE DISEASE SUMMARIES' button"))
  
-  shiny::req(!is.null(rv_param_temp$sel_disease_showRSS))
+  shiny::req(!is.null(rv_param_temp$sel_disease_showRSS), !is.null(input$lesion_free_ymax))
   
-  rv_param_temp$lesion_area_plot <- FuncPlotPointLesion(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$lesion_site, rv_param_temp$lesion_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SiteLesionArea", "TransectLesionArea"), free_ymax = TRUE, set_ymax = NULL, y_text = "Summed Lesion Area", disease_by_transect = input$disease_by_transect)
+  rv_param_temp$lesion_area_plot <- FuncPlotPointLesion(dat = switch((input$lesion_by_transect == TRUE)+1, rv_param_temp$lesion_site, rv_param_temp$lesion_transect), metric = switch((input$lesion_by_transect == TRUE)+1, "SiteLesionArea", "TransectLesionArea"), free_ymax = input$lesion_free_ymax, set_ymax = input$set_lesion_area_ymax, y_text = "Summed Lesion Area Across Transects", disease_by_transect = input$lesion_by_transect)
   
   rv_param_temp$lesion_area_plot$plot %>% hide_legend(.)
 })
@@ -1847,109 +1872,120 @@ plotlyOutput("out_lesion_area_plotly")
 </div>
 </div>
     
-% Coral Disease Counts & Prevalence (stacked bar plots) {data-navmenu="Coral Disease per Site"}
+Disease Prevalence {data-navmenu="Coral Disease"}
 ======================================
 
-Coral Disease Counts & Prevalence per Site
+Inputs {.sidebar data-width=300}
 -------------------------------------
-#### <font size="3">**These stacked bar plots show count of diseased colonies (left-side panel) and disease prevalence (right-side panel) for each selected site**</font>
 
-<span style="font-size:18px; color:red;">
-    PLOTS ARE SLOW TO DRAW - PLEASE BE PATIENT 
-</span>
-
-* Counts and prevalence are summaries of the survey data collected from sample transects, without estimates of statistical error.
+#### <font size="3">**These figures show disease prevalence, summed over selected diseases.**</font>
+  
+* Disease prevalence is a summary of the survey data collected from sample transects, without inference to the study site (therefore, no estimates of statistical error).
 
 * All coral colonies that overlap survey transects are included. See protocol for how "coral colony" is defined.
 
 <span style="font-size:14px; color:red;">
-    NOTE: Disease prevalence is calculated as NUMBER OF CORAL COLONIES WITH DISEASE (numerator) divided by the COUNT OF STONY CORAL COLONIES (denominator--typically, average of two independent counts), expressed as a percentage. Numerator and denominator counts may be conducted by different persons. 
+  NOTE: Disease prevalence is calculated as NUMBER OF CORAL COLONIES WITH DISEASE (numerator) divided by the COUNT OF STONY CORAL COLONIES (denominator), expressed as a percentage. Numerator and denominator counts may be conducted by different persons, without correcting for observer differences.
 </span>
 
 ####
-```{r}
-renderPlot({ # separate validation statements so they are checked in sequence
-  shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(rv_param_temp$disease_subdat))
 
-  disease_barplot_legend <-
-    ggpubr::as_ggplot(cowplot::get_legend(
-  ggplot(data.frame(x=1:2, y = 1:2, DiseaseStatus = c("Diseased", "NotDiseased")), aes(x = x, y = y, fill = DiseaseStatus)) +
-    geom_col() + 
-    scale_fill_manual(values = c("Diseased" = "red", "NotDiseased" = "black"), guide = guide_legend(override.aes = list(size=1.25))) + 
-    theme_bw(base_size = 12) +
-    theme(legend.position = "top",
-          legend.text = element_text(size = 16),
-          legend.title = element_text(size = 16))
-  ))
-  grid.arrange(disease_barplot_legend)
-}, height = 40)
+```{r input_disease_prev_format}
+
+br()
+
+h4("Figure Format Options (plots update immediately)")
+
+checkboxInput("disease_prev_by_transect", label = "Show separate line for each transect (line graphs only)", value = FALSE)
+
+checkboxInput("disease_prev_free_ymax", label = "Allow y-axes scales to vary among line graphs", value = TRUE)
+
+renderUI({
+  shiny::req(!is.null(rv_param_temp$disease_transect), input$disease_prev_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
+  top_prev <-max(rv_param_temp$disease_transect$TransectPrev, na.rm = TRUE) %>% plyr::round_any(., 0.2, f = ceiling)
+  numericInput("set_disease_prev_ymax", label = "Set y-axis maximum for disease prevalence line graphs", min = 0.1, max = top_prev, step = 0.1, value = top_prev)
+})
 ```
+
+Disease Prevalence
+-------------------------------------
 
 ####
 <div class="flex-container">
   <div class="flex-left">
   
-<center><h3>Number of Diseased Coral Colonies (in Survey Transects)</h3></center>
+<center><h3>Coral Disease Prevalence Along Transects</h3></center>
 <br>
-```{r barplot_disease_count}
-output$out_disease_count_stackplot <- renderPlot({
+```{r plot_disease_prev}
+output$out_disease_prev_plotly <- plotly::renderPlotly({
+  shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
-  shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(rv_param_temp$disease_subdat))
+  shiny::validate(
+    need(!is.null(rv_param_temp$disease_site) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options', please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
+ 
+  shiny::req(!is.null(input$disease_prev_free_ymax), !is.null(rv_param_temp$sel_disease_showRSS))
   
-  disease_counts_dat <- rv_param_temp$disease_subdat %>%
-    ungroup() %>%
-    dplyr::select(RSS, Year, SurvDate, Diseased = SiteDiseased, NotDiseased = SiteNotDiseased) %>%
-    dplyr::arrange(RSS, SurvDate) %>%
-    dplyr::mutate(SurvDate = as.factor(SurvDate)) %>% # this is for the bar charts
-    tidyr::pivot_longer(cols = c("Diseased", "NotDiseased"), names_to = "DiseaseStatus", values_to = "NumColonies")
+  rv_param_temp$disease_prev_plot <- FuncPlotPointDisease(dat = switch((input$disease_prev_by_transect == TRUE)+1, rv_param_temp$disease_site, rv_param_temp$disease_transect), metric = switch((input$disease_prev_by_transect == TRUE)+1, "SitePrev", "TransectPrev"), free_ymax = input$disease_prev_free_ymax, set_ymax = input$set_disease_prev_ymax, y_text = "% of Coral Colonies with Disease", disease_by_transect = input$disease_prev_by_transect)
   
-  shiny::req(!is.null(disease_counts_dat))
-  
-  FuncPlotDisease(dat = disease_counts_dat, y_col = "NumColonies", yaxis_title = "Number of Coral Colonies", title_text = "Count of diseased colonies per site, summed across transects")
-},
-  height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$disease_subdat) & !is.null(rv_param_temp$disease_subdat_transect), message = "From 'Data Filter Options' on the line graphs page, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_disease_showRSS));length(rv_param_temp$sel_disease_showRSS)*350}
-)
-
-plotOutput("out_disease_count_stackplot")
+  rv_param_temp$disease_prev_plot$plot %>% hide_legend(.)
+})
+plotlyOutput("out_disease_prev_plotly")
 ```
 
 </div>
 <div class="flex-right">
   
-<center><h3>Coral Disease Prevalence (in Survey Transects)</h3></center>
+<center><h3>Stony Coral Counts, by Transect</h3></center>
 <br>
   
-```{r barplot_disease_prev}
-output$out_disease_prev_stackplot <- renderPlot({
+```{r barplot_disease_colcount_tab}
+output$out_disease_transect_minitab <- DT::renderDT({
   
-  shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(rv_param_temp$disease_subdat))
+  shiny::validate(
+    need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
-  disease_prev_dat <- rv_param_temp$disease_subdat %>%
-    ungroup() %>%
-    dplyr::select(RSS, Year, SurvDate, SitePrev) %>%
-    dplyr::mutate(
-      Diseased = SitePrev,
-      NotDiseased = 100 - SitePrev)
+  shiny::req(!is.null(rv_param_temp$disease_transect))
   
-  disease_prev_dat %<>%
-    dplyr::select(-SitePrev) %>%
-    arrange(RSS, SurvDate) %>%
-    dplyr::mutate(SurvDate = as.factor(SurvDate)) %>%
-    tidyr::pivot_longer(cols = c("Diseased", "NotDiseased"), names_to = "DiseaseStatus", values_to = "PercentColonies")
+  disease_transect_minitab <- rv_param_temp$disease_transect %>%
+    dplyr::select(Site_Transect, SurvDate, StonyCoralCount1, StonyCoralCount2, StonyCoralCountDIFF) %>%
+    dplyr::mutate_at(c("StonyCoralCount1", "StonyCoralCount2", "StonyCoralCountDIFF"), as.integer) %>%
+    dplyr::arrange(desc(StonyCoralCountDIFF))
+  
+  DT::datatable(
+    disease_transect_minitab,
+    filter = "top",
+    class="compact stripe",
+    rownames= FALSE,
+    extensions=c('Buttons'),
+    options = list(
+      caption = "Arranged by StonyCoralCountDIFF, in descending order",
+      filter = "top",
+      selection = "multiple",
+      scrollX = TRUE,
+      autoWidth = TRUE,
+      pageLength = 15,
+      dom = 'Blrtip',
+      buttons = c('copy', 'csv', 'excel'),
+      lengthMenu = list(c(15,30,45,-1),
+                        c(15,30,45,"All")),
+      columnDefs = list(
+        list(className = 'dt_center', targets = "_all") # larger column for TripName
+      )
+    )
+  )
+})
 
-  FuncPlotDisease(dat = disease_prev_dat, y_col = "PercentColonies", yaxis_title = "% of Coral Colonies with Disease", title_text = "Disease prevalence by site, summed across transects")
-},
-  height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$disease_subdat) & !is.null(rv_param_temp$disease_subdat_transect), message = "From 'Data Filter Options' on the line graphs page, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_disease_showRSS));length(rv_param_temp$sel_disease_showRSS)*350}
-)
-
-plotOutput("out_disease_prev_stackplot")
+dataTableOutput("out_disease_transect_minitab")
+tags$style("#out_disease_transect_minitab{height:100vh}")
 ```
   
 </div>
 </div>
 
-Disease Counts & Prevalence (summed to SITE) {data-navmenu="Coral Disease per Site"}
+Disease Counts & Prevalence (table of site-level data) {data-navmenu="Coral Disease"}
 ======================================
+
 #### <font size="3">**This table shows site-level disease count and prevalence.**</font>
 
 * Counts and prevalence are summaries of the survey data collected from sample transects, without estimates of statistical error.
@@ -1957,19 +1993,18 @@ Disease Counts & Prevalence (summed to SITE) {data-navmenu="Coral Disease per Si
 * All coral colonies that overlap survey transects are included. See protocol for how "coral colony" is defined.
 
 <span style="font-size:14px; color:red;">
-    NOTE: Disease prevalence is calculated as NUMBER OF CORAL COLONIES WITH DISEASE (numerator) divided by the COUNT OF STONY CORAL COLONIES (denominator--typically, average of two independent counts), expressed as a percentage. Numerator and denominator counts may be conducted by different persons.
+    NOTE: Disease prevalence is calculated as NUMBER OF CORAL COLONIES WITH DISEASE (numerator) divided by the COUNT OF STONY CORAL COLONIES (denominator), expressed as a percentage. Numerator and denominator counts may be conducted by different persons, without correcting for observer differences.
 </span>
 
 ```{r}
 output$out_disease_prev_tab <- DT::renderDT({
-  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
-  shiny::req(!is.null(rv_param_temp$disease_subdat))
+  shiny::req(!is.null(rv_param_temp$disease_site))
   
-  disease_prev_tab <- rv_param_temp$disease_subdat %>%
+  disease_prev_tab <- rv_param_temp$disease_site %>%
     dplyr::select(-RSS) %>%
     dplyr::select(ParkCode, ReportingSite, ReportingSiteName, Site, IsActive, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel, SiteDiseased, SiteNotDiseased, SiteStonyCoralCountAVG, SitePrev) %>%
     dplyr::mutate_at(c("ParkCode", "ReportingSite", "ReportingSiteName", "Site", "IsActive", "Purpose", "ProtocolVersion", "ColCountsCertificationLevel"), as.factor) %>%
@@ -2006,8 +2041,9 @@ dataTableOutput("out_disease_prev_tab")
 tags$style("#out_disease_prev_tab{height:100vh;overflow-x:scroll;overflow-y:scroll}")
 ``` 
 
-Disease Counts & Prevalence (summed to TRANSECT) {data-navmenu="Coral Disease per Site"}
+Disease Counts & Prevalence (table of transect-level data) {data-navmenu="Coral Disease"}
 ======================================
+
 #### <font size="3">**This table shows transect-level disease count and prevalence.**</font>
 
 * Counts and prevalence are summaries of the survey data collected from sample transects, without estimates of statistical error.
@@ -2015,19 +2051,18 @@ Disease Counts & Prevalence (summed to TRANSECT) {data-navmenu="Coral Disease pe
 * All coral colonies that overlap survey transects are included. See protocol for how "coral colony" is defined.
 
 <span style="font-size:14px; color:red;">
-    NOTE: Disease prevalence is calculated as NUMBER OF CORAL COLONIES WITH DISEASE (numerator) divided by the COUNT OF STONY CORAL COLONIES (denominator--typically, average of two independent counts), expressed as a percentage. Numerator and denominator counts may be conducted by different persons.
+    NOTE: Disease prevalence is calculated as NUMBER OF CORAL COLONIES WITH DISEASE (numerator) divided by the COUNT OF STONY CORAL COLONIES (denominator), expressed as a percentage. Numerator and denominator counts may be conducted by different persons, without correcting for observer differences.
 </span>
 
 ```{r}
 output$out_disease_transect_tab <- DT::renderDT({
-  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
-  shiny::req(!is.null(rv_param_temp$disease_subdat_transect))
+  shiny::req(!is.null(rv_param_temp$disease_transect))
   
-  disease_transect_tab <- rv_param_temp$disease_subdat_transect %>%
+  disease_transect_tab <- rv_param_temp$disease_transect %>%
     dplyr::select(-RSS, -Site_Transect, -TransectSurveyID) %>%
     dplyr::select(ParkCode, ReportingSite, ReportingSiteName, Site, IsActive, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel, Transect, TransectDiseased, TransectNotDiseased, TransectPrev, StonyCoralCount1, StonyCoralCount2, StonyCoralCountAVG, StonyCoralCountDIFF) %>%
     dplyr::mutate_at(c("ParkCode", "ReportingSite", "ReportingSiteName", "Site", "IsActive", "Purpose", "ProtocolVersion", "Transect", "ColCountsCertificationLevel"), as.factor) %>%
@@ -2035,7 +2070,7 @@ output$out_disease_transect_tab <- DT::renderDT({
     dplyr::rename(
       NumColoniesDiseased = TransectDiseased,
       NumColoniesNOTDiseased = TransectNotDiseased,
-      AvgNumColongies = StonyCoralCountAVG,
+      AvgNumColonies = StonyCoralCountAVG,
       DiseasePrevalence = TransectPrev)
   
   DT::datatable(
@@ -2072,7 +2107,6 @@ Cover & Bleaching Data {data-navmenu="Raw Data Tables"}
 
 ```{r}
 output$out_cover_tab <- DT::renderDT({
-  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -2115,7 +2149,6 @@ Disease Data {data-navmenu="Raw Data Tables"}
 
 ```{r}
 output$out_disease_tab <- DT::renderDT({
-  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -2159,7 +2192,6 @@ Colony Counts Data {data-navmenu="Raw Data Tables"}
 
 ```{r}
 output$out_colcounts_tab <- DT::renderDT({
-  Sys.sleep(0.6)
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
