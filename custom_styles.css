@@ -1,0 +1,65 @@
+/* Map title */
+.leaflet-control.map-title { 
+    transform: translate(-50%,20%);
+    position: fixed !important;
+    left: 50%;
+    text-align: center;
+    padding-left: 10px; 
+    padding-right: 10px; 
+    background: rgba(255,255,255,0.75);
+    font-weight: bold;
+    font-size: 20px;
+  }
+
+/* Create two equal columns that sit next to each other */
+/* Note: If I put this under level-3 header, bottom gets cut off */
+.flex-container {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: row;
+  justify-content:space-evenly;
+  align-items: center;
+  background-color: White;
+}
+
+.flex-left {
+  min-width: 500px;
+  width: 49%;
+  flex-basis: auto; /* check the remaining space */
+  flex-grow: 1; /* grow into remaining space */
+  flex-shrink: 0;
+  height: 100vh;
+  margin: 2px;
+  padding: 2px;
+}
+
+.flex-right {
+  min-width: 500px;
+  width: 49%;
+  flex-basis: auto; /* check the remaining space */
+  flex-grow: 1; /* grow into remaining space */
+  flex-shrink: 0;
+  height: 100vh;
+  margin: 2px;
+  padding: 2px;
+}
+
+.green-action-button {
+  background-color:#66CD00; 
+  color:black; 
+  font-size:13px;
+  width:100%;
+}
+
+.blue-action-button {
+  background-color:#6495ED; 
+  color:black; 
+  font-size:13px;
+  width:100%;
+}
+
+.shiny-output-error-validation {
+  font-size:14px;
+  color: #FF0000;
+} # validation text is in red. Could also add 'font-weight: bold;'
