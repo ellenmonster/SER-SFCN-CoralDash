@@ -26,7 +26,7 @@ source("Corals.R")
 
 rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list = NULL, transect_counts_df = NULL, cover_CIs_df = NULL, bleach_CIs_df = NULL, disease_df = NULL, colcounts_df = NULL)
 
-rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_site = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_site = NULL, lesion_transect = NULL)
+rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
 
 tags$style("table {
            height: calc(100vh - 80px) !important;
@@ -157,8 +157,8 @@ FuncPlotPointDisease <- function(dat, metric, free_ymax, set_ymax, y_text, disea
   } else {
     p <- 
       ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric)) +
-      geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", SiteDiseased, "<br>Avg Number of Colonies: ", SiteStonyCoralCountAVG, "<br>Disease Prevalence: ", SitePrev))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
-      geom_line(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", SiteDiseased, "<br>Avg Number of Colonies: ", SiteStonyCoralCountAVG, "<br>Disease Prevalence: ", SitePrev)), group = "RSS")
+      geom_point(aes(text = paste0("Reporting Site/Site: ", RSS, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", SiteDiseased, "<br>Avg Number of Colonies: ", SiteStonyCoralCountAVG, "<br>Disease Prevalence: ", SitePrev))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+      geom_line(aes(text = paste0("Reporting Site/Site: ", RSS, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", SiteDiseased, "<br>Avg Number of Colonies: ", SiteStonyCoralCountAVG, "<br>Disease Prevalence: ", SitePrev)), group = "RSS")
     
   }
   
@@ -236,8 +236,8 @@ FuncPlotPointLesion <- function(dat, metric, free_ymax, set_ymax, y_text, diseas
   } else {
     p <- 
       ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric)) +
-      geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Disease Lesions: ", SiteLesionCounts, "<br>Summed Lesion Area: ", SiteLesionArea))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
-      geom_line(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Disease Lesions: ", SiteLesionCounts, "<br>Summed Lesion Area: ", SiteLesionArea)), group = "RSS")
+      geom_point(aes(text = paste0("Reporting Site/Site: ", RSS, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Disease Lesions: ", SiteLesionCounts, "<br>Summed Lesion Area: ", SiteLesionArea))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+      geom_line(aes(text = paste0("Reporting Site/Site: ", RSS, "<br>Survey Date: ", SurvDate, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Disease Lesions: ", SiteLesionCounts, "<br>Summed Lesion Area: ", SiteLesionArea)), group = "RSS")
     
   }
   
@@ -414,7 +414,7 @@ observeEvent(eventExpr = input$button_import, {
   withProgress(message = "Please be patient. Calculating something wonderful...", value = 0, {
     FuncCorals(filenam = input$filenam$datapath, sitesfilenam = input$sitesfilenam$datapath, diseasefilenam = input$diseasefilenam$datapath, colcountsfilenam = input$colcountsfilenam$datapath, out_prefix = input$out_prefix)
     
-    rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_site = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_site = NULL, lesion_transect = NULL)
+    rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
     
      showModal(modalDialog(
         title = "Done",
@@ -436,7 +436,7 @@ observeEvent(eventExpr = input$summaryfile, {
 
   rv <- sapply(names(out), FUN = function(i) {rv[[i]] <- out[[i]]}, simplify = FALSE)
   
-  rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_site = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_site = NULL, lesion_transect = NULL)
+  rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
 
   Sys.sleep(0.6)
  
@@ -570,12 +570,16 @@ observeEvent(eventExpr = input$disease_discoloration_button, {
 # Action to update disease summaries with current user inputs
 observeEvent(eventExpr = input$button_update_disease, {
   
+     saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
+   saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
+   
   shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(input$sel_disease_sitescale), !is.null(input$sel_disease_showRSS), !is.null(input$sel_disease_episodic), !is.null(input$sel_diseases))
   
-  rv_param_temp$sel_disease_showRSS <- rv_param_temp$disease_site <- rv_param_temp$disease_transect <- rv_param_temp$lesion_site <- rv_param_temp$lesion_transect <- NULL
+  rv_param_temp$sel_disease_showRSS <- rv_param_temp$disease_RSS <- rv_param_temp$disease_transect <- rv_param_temp$lesion_RSS <- rv_param_temp$lesion_transect <- NULL
 
   # Subset of disease data to use
   diseases <- rv$disease_df %>%
+    dplyr::filter(DiseaseCertificationLevel == "Accepted") %>%
     dplyr::mutate(
       RSS = get(input$sel_disease_sitescale),
       DiseaseFull = paste0(DiseaseDescription, " (", DiseaseCode, ")"),
@@ -617,10 +621,10 @@ observeEvent(eventExpr = input$button_update_disease, {
        ) %>%
      ungroup()
    
-   # Site-level disease counts and prevalence (summed across transects for a survey event)
-   disease_site <- disease_transect %>%
-     dplyr::select(ParkCode, RSS, ReportingSite, ReportingSiteName, Site, IsActive, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel, TransectDiseased, TransectNotDiseased, StonyCoralCountAVG) %>%
-     dplyr::group_by(ParkCode, RSS, ReportingSite, ReportingSiteName, Site, IsActive, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel) %>%
+   # RSS-level disease counts and prevalence (summed across transects for a survey event)
+   disease_RSS <- disease_transect %>%
+     dplyr::select(ParkCode, RSS, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel, TransectDiseased, TransectNotDiseased, StonyCoralCountAVG) %>%
+     dplyr::group_by(ParkCode, RSS, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel) %>% # <<<<<<< NEED TO FIX THIS--BECAUSE SHOULD ONLY INCLUDE YEARS FOR WHICH ALL SITES ARE ACTIVE
      dplyr::summarize(
        SiteDiseased = sum(TransectDiseased),
        SiteNotDiseased = sum(TransectNotDiseased),
@@ -642,26 +646,24 @@ observeEvent(eventExpr = input$button_update_disease, {
        dplyr::select(ParkCode, ReportingSite, Site, IsActive, Transect, SurvDate, TransectSurveyID, Purpose, ProtocolVersion, DiseaseCertificationLevel, RSS, TransectLesionCounts, TransectLesionArea) %>%
        dplyr::distinct()
      
-     lesion_site <- lesion_transect %>%
-     dplyr::select(ParkCode, ReportingSite, Site, IsActive, SurvDate, Purpose, ProtocolVersion, DiseaseCertificationLevel, RSS, TransectLesionCounts, TransectLesionArea) %>%
-     dplyr::group_by(ParkCode, ReportingSite, Site, IsActive, SurvDate, Purpose, ProtocolVersion, DiseaseCertificationLevel, RSS) %>%
+     lesion_RSS <- lesion_transect %>%
+     dplyr::select(ParkCode, RSS, SurvDate, Purpose, ProtocolVersion, DiseaseCertificationLevel, TransectLesionCounts, TransectLesionArea) %>%
+     dplyr::group_by(ParkCode, RSS, SurvDate, Purpose, ProtocolVersion, DiseaseCertificationLevel) %>%
      dplyr::summarize(
        SiteLesionCounts = sum(TransectLesionCounts),
        SiteLesionArea = sum(TransectLesionArea)
      )
    } else {
-       lesion_site <- lesion_transect <- NULL
+       lesion_RSS <- lesion_transect <- NULL
      }
   
   
    rv_param_temp$sel_disease_showRSS <- input$sel_disease_showRSS
-   rv_param_temp$disease_site <- disease_site
+   rv_param_temp$disease_RSS <- disease_RSS
    rv_param_temp$disease_transect <- disease_transect
-   rv_param_temp$lesion_site <- lesion_site
+   rv_param_temp$lesion_RSS <- lesion_RSS
    rv_param_temp$lesion_transect <- lesion_transect
-  
-   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
-   saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
+
    })
 ```
 
@@ -1634,7 +1636,7 @@ wellPanel(
   }),
   
     tags$div(renderText({
-    shiny::req(!is.null(input$sel_bleach_sitescale))
+    shiny::req(!is.null(input$sel_disease_sitescale))
     if(input$sel_disease_sitescale == "ReportingSite") {
       paste0("NOTE: Summaries by Reporting Site are limited to survey events for which data are available for all included Sites")  # Explain how reporting sites are summarized
     }
@@ -1651,7 +1653,7 @@ wellPanel(
     
     # Select (reporting) sites
     checkboxGroupInput("sel_disease_showRSS", 
-                       label = paste0("Show results for these ", if_else(input$sel_bleach_sitescale == "ReportingSite", "reporting sites", "sites")),
+                       label = paste0("Show results for these ", if_else(input$sel_disease_sitescale == "ReportingSite", "reporting sites", "sites")),
                        choices = disease_RSS_choices, 
                        selected = if(!is.null(input$sel_disease_showRSS) & all(input$sel_disease_showRSS %in% disease_RSS_choices)) {input$sel_disease_showRSS} else {disease_RSS_choices}) # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
   }),
@@ -1699,8 +1701,8 @@ checkboxInput("disease_by_transect", label = "Show separate line for each transe
 checkboxInput("disease_free_ymax", label = "Allow y-axes scales to vary among line graphs", value = TRUE)
 
 renderUI({
-  shiny::req(!is.null(rv_param_temp$disease_site), input$disease_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
-  top_count <-max(rv_param_temp$disease_site$SiteDiseased, na.rm = TRUE) %>% plyr::round_any(., 5, f = ceiling)
+  shiny::req(!is.null(rv_param_temp$disease_RSS), input$disease_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
+  top_count <-max(rv_param_temp$disease_RSS$SiteDiseased, na.rm = TRUE) %>% plyr::round_any(., 5, f = ceiling)
   numericInput("set_disease_count_ymax", label = "Set y-axis maximum for diseased colonies count line graphs", min = 1, max = top_count, step = 1, value = top_count)
 })
 ```
@@ -1731,11 +1733,11 @@ output$out_disease_count_plotly <- plotly::renderPlotly({
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::validate(
-    need(!is.null(rv_param_temp$disease_site) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
+    need(!is.null(rv_param_temp$disease_RSS) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
   
   shiny::req(!is.null(input$disease_free_ymax), !is.null(rv_param_temp$sel_disease_showRSS))
   
-  rv_param_temp$disease_count_plot <- FuncPlotPointDisease(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$disease_site, rv_param_temp$disease_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SiteDiseased", "TransectDiseased"), free_ymax = input$disease_free_ymax, set_ymax = input$set_disease_count_ymax, y_text = "Number of Diseased Coral Colonies Detected", disease_by_transect = input$disease_by_transect)
+  rv_param_temp$disease_count_plot <- FuncPlotPointDisease(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$disease_RSS, rv_param_temp$disease_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SiteDiseased", "TransectDiseased"), free_ymax = input$disease_free_ymax, set_ymax = input$set_disease_count_ymax, y_text = "Number of Diseased Coral Colonies Detected", disease_by_transect = input$disease_by_transect)
   
   rv_param_temp$disease_count_plot$plot %>% hide_legend(.)
 })
@@ -1755,9 +1757,9 @@ output$out_disease_count_stackplot <- renderPlot({
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::validate(
-    need(!is.null(rv_param_temp$disease_site) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
+    need(!is.null(rv_param_temp$disease_RSS) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the left, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
   
-  disease_counts_dat <- rv_param_temp$disease_site %>%
+  disease_counts_dat <- rv_param_temp$disease_RSS %>%
     ungroup() %>%
     dplyr::select(RSS, Year, SurvDate, Diseased = SiteDiseased, NotDiseased = SiteNotDiseased) %>%
     dplyr::arrange(RSS, SurvDate) %>%
@@ -1768,7 +1770,7 @@ output$out_disease_count_stackplot <- renderPlot({
   
   FuncPlotDisease(dat = disease_counts_dat, y_col = "NumColonies", yaxis_title = "Number of Coral Colonies")
 },
-  height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$disease_site) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the line graphs page, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_disease_showRSS));150+length(rv_param_temp$sel_disease_showRSS)*250}
+  height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$disease_RSS) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the line graphs page, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_disease_showRSS));150+length(rv_param_temp$sel_disease_showRSS)*250}
 )
 
 plotOutput("out_disease_count_stackplot")
@@ -1809,14 +1811,14 @@ checkboxInput("lesion_by_transect", label = "Show separate line for each transec
 checkboxInput("lesion_free_ymax", label = "Allow y-axes scales to vary among line graphs", value = TRUE)
 
 renderUI({
-  shiny::req(!is.null(rv_param_temp$lesion_site), !is.null(rv_param_temp$lesion_transect), input$lesion_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
-  top_lesion_count <-max(rv_param_temp$lesion_site$SiteLesionCounts, na.rm = TRUE) %>% plyr::round_any(., 5, f = ceiling)
+  shiny::req(!is.null(rv_param_temp$lesion_RSS), !is.null(rv_param_temp$lesion_transect), input$lesion_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
+  top_lesion_count <-max(rv_param_temp$lesion_RSS$SiteLesionCounts, na.rm = TRUE) %>% plyr::round_any(., 5, f = ceiling)
   numericInput("set_lesion_count_ymax", label = "Set y-axis maximum for lesion count", min = 1, max = top_lesion_count, step = 5, value = top_lesion_count)
 })
 
 renderUI({
-  shiny::req(!is.null(rv_param_temp$lesion_site), !is.null(rv_param_temp$lesion_transect), input$lesion_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
-  top_lesion_area <-max(rv_param_temp$lesion_site$SiteLesionArea, na.rm = TRUE) %>% plyr::round_any(., 10, f = ceiling)
+  shiny::req(!is.null(rv_param_temp$lesion_RSS), !is.null(rv_param_temp$lesion_transect), input$lesion_free_ymax == FALSE) # this option is only shown when y-axes scales are not allowed to vary among plots
+  top_lesion_area <-max(rv_param_temp$lesion_RSS$SiteLesionArea, na.rm = TRUE) %>% plyr::round_any(., 10, f = ceiling)
   numericInput("set_lesion_area_ymax", label = "Set y-axis maximum for lesion area", min = 0.1, max = top_lesion_area, step = 10, value = top_lesion_area)
 })
 ```
@@ -1837,11 +1839,11 @@ output$out_lesion_count_plotly <- plotly::renderPlotly({
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::validate(
-    need(!is.null(rv_param_temp$lesion_site), message = "From 'Data Filter Options', please select site(s) and at least one tissue loss disease or YB, then press the green 'UPDATE DISEASE SUMMARIES' button"))
+    need(!is.null(rv_param_temp$lesion_RSS), message = "From 'Data Filter Options', please select site(s) and at least one tissue loss disease or YB, then press the green 'UPDATE DISEASE SUMMARIES' button"))
   
   shiny::req(!is.null(rv_param_temp$sel_disease_showRSS), !is.null(input$lesion_free_ymax))
   
-  rv_param_temp$lesion_count_plot <- FuncPlotPointLesion(dat = switch((input$lesion_by_transect == TRUE)+1, rv_param_temp$lesion_site, rv_param_temp$lesion_transect), metric = switch((input$lesion_by_transect == TRUE)+1, "SiteLesionCounts", "TransectLesionCounts"), free_ymax = input$lesion_free_ymax, set_ymax = input$set_lesion_count_ymax, y_text = "Number of Disease Lesions Detected on Transects", disease_by_transect = input$lesion_by_transect)
+  rv_param_temp$lesion_count_plot <- FuncPlotPointLesion(dat = switch((input$lesion_by_transect == TRUE)+1, rv_param_temp$lesion_RSS, rv_param_temp$lesion_transect), metric = switch((input$lesion_by_transect == TRUE)+1, "SiteLesionCounts", "TransectLesionCounts"), free_ymax = input$lesion_free_ymax, set_ymax = input$set_lesion_count_ymax, y_text = "Number of Disease Lesions Detected on Transects", disease_by_transect = input$lesion_by_transect)
   
   rv_param_temp$lesion_count_plot$plot %>% hide_legend(.)
 })
@@ -1859,11 +1861,11 @@ output$out_lesion_area_plotly <- plotly::renderPlotly({
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::validate(
-    need(!is.null(rv_param_temp$lesion_site), message = "From 'Data Filter Options', please select site(s) and at least one tissue loss disease or YB, then press the green 'UPDATE DISEASE SUMMARIES' button"))
+    need(!is.null(rv_param_temp$lesion_RSS), message = "From 'Data Filter Options', please select site(s) and at least one tissue loss disease or YB, then press the green 'UPDATE DISEASE SUMMARIES' button"))
  
   shiny::req(!is.null(rv_param_temp$sel_disease_showRSS), !is.null(input$lesion_free_ymax))
   
-  rv_param_temp$lesion_area_plot <- FuncPlotPointLesion(dat = switch((input$lesion_by_transect == TRUE)+1, rv_param_temp$lesion_site, rv_param_temp$lesion_transect), metric = switch((input$lesion_by_transect == TRUE)+1, "SiteLesionArea", "TransectLesionArea"), free_ymax = input$lesion_free_ymax, set_ymax = input$set_lesion_area_ymax, y_text = "Summed Lesion Area Across Transects", disease_by_transect = input$lesion_by_transect)
+  rv_param_temp$lesion_area_plot <- FuncPlotPointLesion(dat = switch((input$lesion_by_transect == TRUE)+1, rv_param_temp$lesion_RSS, rv_param_temp$lesion_transect), metric = switch((input$lesion_by_transect == TRUE)+1, "SiteLesionArea", "TransectLesionArea"), free_ymax = input$lesion_free_ymax, set_ymax = input$set_lesion_area_ymax, y_text = "Summed Lesion Area Across Transects", disease_by_transect = input$lesion_by_transect)
   
   rv_param_temp$lesion_area_plot$plot %>% hide_legend(.)
 })
@@ -1922,11 +1924,11 @@ output$out_disease_prev_plotly <- plotly::renderPlotly({
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
   shiny::validate(
-    need(!is.null(rv_param_temp$disease_site) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options', please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
+    need(!is.null(rv_param_temp$disease_RSS) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options', please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"))
  
   shiny::req(!is.null(input$disease_prev_free_ymax), !is.null(rv_param_temp$sel_disease_showRSS))
   
-  rv_param_temp$disease_prev_plot <- FuncPlotPointDisease(dat = switch((input$disease_prev_by_transect == TRUE)+1, rv_param_temp$disease_site, rv_param_temp$disease_transect), metric = switch((input$disease_prev_by_transect == TRUE)+1, "SitePrev", "TransectPrev"), free_ymax = input$disease_prev_free_ymax, set_ymax = input$set_disease_prev_ymax, y_text = "% of Coral Colonies with Disease", disease_by_transect = input$disease_prev_by_transect)
+  rv_param_temp$disease_prev_plot <- FuncPlotPointDisease(dat = switch((input$disease_prev_by_transect == TRUE)+1, rv_param_temp$disease_RSS, rv_param_temp$disease_transect), metric = switch((input$disease_prev_by_transect == TRUE)+1, "SitePrev", "TransectPrev"), free_ymax = input$disease_prev_free_ymax, set_ymax = input$set_disease_prev_ymax, y_text = "% of Coral Colonies with Disease", disease_by_transect = input$disease_prev_by_transect)
   
   rv_param_temp$disease_prev_plot$plot %>% hide_legend(.)
 })
@@ -1986,7 +1988,7 @@ tags$style("#out_disease_transect_minitab{height:100vh}")
 Disease Counts & Prevalence (table of site-level data) {data-navmenu="Coral Disease"}
 ======================================
 
-#### <font size="3">**This table shows site-level disease count and prevalence.**</font>
+#### <font size="3">**This table shows reporting site/site-level disease count and prevalence.**</font>
 
 * Counts and prevalence are summaries of the survey data collected from sample transects, without estimates of statistical error.
 
@@ -2002,12 +2004,11 @@ output$out_disease_prev_tab <- DT::renderDT({
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
   
-  shiny::req(!is.null(rv_param_temp$disease_site))
+  shiny::req(!is.null(rv_param_temp$disease_RSS))
   
-  disease_prev_tab <- rv_param_temp$disease_site %>%
-    dplyr::select(-RSS) %>%
-    dplyr::select(ParkCode, ReportingSite, ReportingSiteName, Site, IsActive, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel, SiteDiseased, SiteNotDiseased, SiteStonyCoralCountAVG, SitePrev) %>%
-    dplyr::mutate_at(c("ParkCode", "ReportingSite", "ReportingSiteName", "Site", "IsActive", "Purpose", "ProtocolVersion", "ColCountsCertificationLevel"), as.factor) %>%
+  disease_prev_tab <- rv_param_temp$disease_RSS %>%
+    dplyr::select(ParkCode, RSS, Year, SurvDate, Purpose, ProtocolVersion, ColCountsCertificationLevel, SiteDiseased, SiteNotDiseased, SiteStonyCoralCountAVG, SitePrev) %>%
+    dplyr::mutate_at(c("ParkCode", "RSS", "Purpose", "ProtocolVersion", "ColCountsCertificationLevel"), as.factor) %>%
     dplyr::mutate_at(c("Year", "SiteDiseased", "SiteNotDiseased"), as.integer) %>%
     dplyr::rename(
       NumColoniesDiseased = SiteDiseased,
