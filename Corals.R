@@ -697,7 +697,8 @@ incProgress(4/5, detail = paste0("...`reporting site`-level coral bleaching esti
 RS_bleach_CIs_list <- apply(unique(RS_estim_dates[c( "ReportingSite", "SurvDate")]), 1, FUN = function(x) {
   
 incProgress(4/5, detail = paste0("...`reporting site`-level coral bleaching estimates for ", x[["ReportingSite"]], x[["SurvDate"]]))
-  cat("reporting site-level coral bleaching estimates")
+  cat("reporting site-level coral bleaching estimates ")
+  
   cat(x[["ReportingSite"]], x[["SurvDate"]])
   subsites <- RS_estim_dates %>% dplyr::filter(ReportingSite == x[["ReportingSite"]] & SurvDate == x[["SurvDate"]]) %>% dplyr::pull(Site) # these are the sites in that RS with that survey date
   
@@ -749,7 +750,13 @@ BleachRelCov <- site_bleach_CIs_df %>%
 mapdat2 <- mapdat %>%
   full_join(BleachRelCov, by = "Site") %>%
   left_join(coral[c("Site", "SurvDate", "Purpose")] %>% distinct(), by = c("Site", "SurvDate")) %>% # add Purpose info
-  mutate(PopText = paste0(PopText, ": ", SurvDate, "(", Purpose, ")")) %>%
+  mutate(PopText = paste0(PopText, ": ", SurvDate, "(", Purpose, ")")) 
+
+col_order <- c("ReportingSite", "ReportingSiteName", "Site", "IsActive", "NumTransects", "MinYr", "MaxYr", "MedLat", "MedLong", "SurvDate", "Purpose", "PopText", "%Coral", "%NonCoral", "UNBL", "BL1", "BL2", "BL3", "BL4", "NoData")
+missing_cols <- setdiff(col_order, names(mapdat2))  # Find names of missing columns
+mapdat2[missing_cols] <- NA
+
+mapdat2 %<>%
   dplyr::select("ReportingSite", "ReportingSiteName", "Site", "IsActive", "NumTransects", "MinYr", "MaxYr", "MedLat", "MedLong", "SurvDate", "Purpose", "PopText", "%Coral", "%NonCoral", "UNBL", "BL1", "BL2", "BL3", "BL4", "NoData") # order columns
 
 cover_CIs_df <- site_CIs_df %>% 

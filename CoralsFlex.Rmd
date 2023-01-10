@@ -150,7 +150,7 @@ FuncPlotPointDisease <- function(dat, metric, free_ymax, set_ymax, y_text, disea
   
   if(disease_by_transect == TRUE){ # if separate line for each transect...
     p <- 
-      ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric, colour = Transect)) +
+      ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric, colour = Site_Transect)) +
       scale_color_viridis_d(name = metric, direction=-1, guide = guide_legend(override.aes = list(size=1.25))) +
       geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", TransectDiseased, "<br>Stony Coral Count 1: ", StonyCoralCount1, "<br> Stony Coral Count 2: ", StonyCoralCount2, "<br>DIFF Stony Coral Count: ", StonyCoralCountDIFF, "<br>Avg Stony Coral Count: ", StonyCoralCountAVG, "<br>Disease Prevalence: ", TransectPrev))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
     geom_line(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Diseased Colonies: ", TransectDiseased, "<br>Stony Coral Count 1: ", StonyCoralCount1, "<br> Stony Coral Count 2: ", StonyCoralCount2, "<br>DIFF Stony Coral Count: ", StonyCoralCountDIFF, "<br>Avg Stony Coral Count: ", StonyCoralCountAVG, "<br>Disease Prevalence: ", TransectPrev)), group = "Transect") # need to add this grouping to geom_line, otherwise the text will cause it to group incorrectly. Need to add text b/c otherwise the line will not show when plotly tooltip is set to "text"
@@ -229,10 +229,10 @@ FuncPlotPointLesion <- function(dat, metric, free_ymax, set_ymax, y_text, diseas
   
   if(disease_by_transect == TRUE){ # if separate line for each transect...
     p <- 
-      ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric, colour = Transect)) +
+      ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric, colour = Site_Transect)) +
       scale_color_viridis_d(name = metric, direction=-1, guide = guide_legend(override.aes = list(size=1.25))) +
-      geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Disease Lesions: ", TransectLesionCounts, "<br>Summed Lesion Area: ", TransectLesionArea))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
-    geom_line(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Disease Lesions: ", TransectLesionCounts, "<br>Summed Lesion Area: ", TransectLesionArea)), group = "Transect") # need to add this grouping to geom_line, otherwise the text will cause it to group incorrectly. Need to add text b/c otherwise the line will not show when plotly tooltip is set to "text"
+      geom_point(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Site_Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Disease Lesions: ", TransectLesionCounts, "<br>Summed Lesion Area: ", TransectLesionArea))) + # aesthetic text is for ggplotly tooltip. Gives warning that it's not recognized but it still works
+    geom_line(aes(text = paste0("Reporting Site: ", ReportingSite, "<br>Site: ", Site, "<br>Survey Date: ", SurvDate, "<br>Transect: ", Site_Transect, "<br>Y-VALUE: ", PlotMetric, "<br><br>Number of Disease Lesions: ", TransectLesionCounts, "<br>Summed Lesion Area: ", TransectLesionArea)), group = "Site_Transect") # need to add this grouping to geom_line, otherwise the text will cause it to group incorrectly. Need to add text b/c otherwise the line will not show when plotly tooltip is set to "text"
   } else {
     p <- 
       ggplot(data = plot_dat, aes(x = SurvDate, y = PlotMetric)) +
@@ -569,9 +569,9 @@ observeEvent(eventExpr = input$disease_discoloration_button, {
 ```{r action_button_update_disease}
 # Action to update disease summaries with current user inputs
 observeEvent(eventExpr = input$button_update_disease, {
-  
-     saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
-   saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
+   # 
+   #   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
+   # saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
    
   shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(input$sel_disease_sitescale), !is.null(input$sel_disease_showRSS), !is.null(input$sel_disease_episodic), !is.null(input$sel_diseases))
   
@@ -579,9 +579,10 @@ observeEvent(eventExpr = input$button_update_disease, {
 
   # Subset of disease data to use
   diseases <- rv$disease_df %>%
-    dplyr::filter(DiseaseCertificationLevel == "Accepted") %>%
+    # dplyr::filter(DiseaseCertificationLevel == "Accepted") %>%
     dplyr::mutate(
       RSS = get(input$sel_disease_sitescale),
+      Site_Transect = paste(Site, Transect, sep = "_"),
       DiseaseFull = paste0(DiseaseDescription, " (", DiseaseCode, ")"),
       TaxonFull = paste0(CoralScientificName, " (", Taxon, ")")) %>%
     dplyr::filter(
@@ -591,7 +592,7 @@ observeEvent(eventExpr = input$button_update_disease, {
   
   # Filter colony counts data for the user-specified RSS and calculate avg count
    master_counts <- rv$colcounts_df %>%
-     dplyr::filter(ColCountsCertificationLevel == "Accepted") %>%
+     # dplyr::filter(ColCountsCertificationLevel == "Accepted") %>%
      dplyr::mutate(RSS = get(input$sel_disease_sitescale)) %>%
      dplyr::filter(RSS %in% input$sel_disease_showRSS) %>%
      dplyr::mutate(Site_Transect = paste(Site, Transect, sep = "_"),
@@ -643,7 +644,7 @@ observeEvent(eventExpr = input$button_update_disease, {
        dplyr::mutate(
          TransectLesionCounts = n(),
          TransectLesionArea = sum(LesionArea)) %>%
-       dplyr::select(ParkCode, ReportingSite, Site, IsActive, Transect, SurvDate, TransectSurveyID, Purpose, ProtocolVersion, DiseaseCertificationLevel, RSS, TransectLesionCounts, TransectLesionArea) %>%
+       dplyr::select(ParkCode, ReportingSite, Site, IsActive, Site_Transect, SurvDate, TransectSurveyID, Purpose, ProtocolVersion, DiseaseCertificationLevel, RSS, TransectLesionCounts, TransectLesionArea) %>%
        dplyr::distinct()
      
      lesion_RSS <- lesion_transect %>%
@@ -715,7 +716,7 @@ Column {data-width=10}
 Column {data-width=225}
 -------------------------------------
 
-### PROCESS A RAW CORAL DATA FILE {data-height=150}
+### PROCESS A RAW CORAL DATA FILE {data-height=200}
 ```{r select_raw_data}
 textInput("out_prefix", label = "Prefix to append to output files: ", value = paste0("corals", gsub(pattern = "-", replacement = "", x = Sys.Date()), "_"), width = "100%")
 
