@@ -570,8 +570,6 @@ observeEvent(eventExpr = input$disease_discoloration_button, {
 # Action to update disease summaries with current user inputs
 observeEvent(eventExpr = input$button_update_disease, {
    # 
-   #   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
-   # saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
    
   shiny::req(!is.null(rv$disease_df), !is.null(rv$colcounts_df), !is.null(input$sel_disease_sitescale), !is.null(input$sel_disease_showRSS), !is.null(input$sel_disease_episodic), !is.null(input$sel_diseases))
   
@@ -967,14 +965,35 @@ output$out_transects_plotly <- plotly::renderPlotly({
 
   shiny::req(!is.null(rv$transect_counts_df), !is.null(rv_param_temp$sel_raw_dates))
  
+   #   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
+   # saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
+  
   p <- ggplot(rv_param_temp$transects_subdat, aes(x = SurvDate, y = PercCov)) +
-    labs(title = paste0("% Cover per Transect for ", toupper(unique(rv_param_temp$transects_subdat$Category)), " at ", unique(rv_param_temp$transects_subdat$RSS))) +
+    labs(x = NULL, y = NULL, title = paste0("% Cover per Transect for ", toupper(unique(rv_param_temp$transects_subdat$Category)), " at ", unique(rv_param_temp$transects_subdat$RSS))) +
+    scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
     geom_point() +
     geom_line() +
     geom_vline(xintercept = as.numeric(as.Date(rv_param_temp$sel_raw_dates)), color = "red") +
     theme_bw() +
     facet_wrap(vars(Site_Transect))
-  ggplotly(p)
+  
+  ggplotly(p) %>%
+    add_annotations( # y-axis title
+      text = "% Cover of Coral",
+      x = -0.04,
+      y = 0.5,
+      yref = "paper",
+      xref = "paper",
+      xanchor = "right",
+      yanchor = "middle",
+      textangle = -90,
+      showarrow = FALSE,
+      font = list(size = 16)
+    ) %>%
+  layout(
+    margin = list(l = 75, r = 75,
+          b = 75, t = 75)
+  )
   })
 
 tags$style("#out_transects_plotly{overflow-x:scroll;overflow-y:scroll}")
