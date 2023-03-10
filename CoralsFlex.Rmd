@@ -26,7 +26,7 @@ source("Corals.R")
 
 rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list = NULL, transect_counts_df = NULL, cover_CIs_df = NULL, bleach_CIs_df = NULL, disease_df = NULL, colcounts_df = NULL)
 
-rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
+rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, transect_plot = NULL, transect_table = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, relcover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
 
 tags$style("table {
            height: calc(100vh - 80px) !important;
@@ -43,7 +43,7 @@ FuncWarnTable <-function(colnam) {
   return(x_tab)
 }
 
-FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, set_ymax, y_text, which_showRSS, PC_blackwhite) {
+FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, set_ymax, y_text, title_text, which_showRSS, PC_blackwhite) {
   # Function to generate point plots with error bars
   #
   # Args:
@@ -72,10 +72,10 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, set
       ggplot(data = plot_dat, aes_string(x = "SurvDate", y = "EstimCov", colour = if_else(sel_splitplot == "one_loc_many_sub", "NumerLevel", "RSS"))) 
     
     if(PC_blackwhite) {
-      p <- p + scale_colour_grey(guide = guide_legend(override.aes = list(size=2)))
+      p <- p + scale_colour_grey(guide = guide_legend(override.aes = list(size=1)))
     } else {
       p <- p +
-        scale_color_manual(values = cbp1_assigned, guide = guide_legend(override.aes = list(size=1.25)))
+        scale_color_manual(values = cbp1_assigned, guide = guide_legend(override.aes = list(size=1)))
     }
   
   p <- p +
@@ -95,15 +95,13 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, set
   }
   
   p <- p +
-    labs(x = "Year", y = y_text) +
+    labs(title = title_text, x = "Year", y = y_text) +
     scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
     facet_wrap(as.formula(facet_vars), scales = if_else(free_ymax, "free_y", "fixed"), ncol = 1) +
-    theme_bw(base_size = 12) +
-    theme(legend.position = "top",
-          legend.text = element_text(size = 16),
-          legend.title = element_text(size = 16))
-  
-  cov_legend <- ggpubr::as_ggplot(cowplot::get_legend(p))
+    theme_bw(base_size = 12)
+  # +
+  #   theme(legend.text = element_text(size = 12),
+  #         legend.title = element_text(size = 12))
       
   facet_ht <- 250 # 215
   add_on_ht <- 150 # 150, this is for x-axis
@@ -118,7 +116,32 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, set
                  tooltip = "text", # make sure only the custom text is shown on hover
                  height = page_ht) # specify the total plot height here because this layout will be applied to the entire page
   
-  gp <- gp %>% layout(
+  gp <- gp %>%
+    # add_annotations( # y-axis title
+    #   text = "TEST-Y-ANNOT",
+    #   x = -0.04,
+    #   y = 0.5,
+    #   yref = "paper",
+    #   xref = "paper",
+    #   xanchor = "right",
+    #   yanchor = "middle",
+    #   textangle = -90,
+    #   showarrow = FALSE,
+    #   font = list(size = 16)
+    # ) %>%
+    # add_annotations( # x-axis title
+    #   text = "TEST-X-ANNOT",
+    #   x = 0.5,
+    #   y = -0.15,
+    #   yref = "paper",
+    #   xref = "paper",
+    #   xanchor = "middle",
+    #   yanchor = "top",
+    #   textangle = 0,
+    #   showarrow = FALSE,
+    #   font = list(size = 16)
+    # ) %>%
+  layout(
     margin = list(
       t=80,
       b=90,
@@ -128,9 +151,7 @@ FuncPlotPointCI <- function(dat, denom, sel_error, sel_splitplot, free_ymax, set
   gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.12 # move y-axis title more to the left
   gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.03 # move x-axis title down more. This affects the x-axis title specified in ggplot
   
-  return_list <- list(plot = gp, legend = cov_legend)
-  
-  return(return_list)
+  return(gp)
 }
 
 FuncPlotPointDisease <- function(dat, metric, free_ymax, set_ymax, y_text, disease_by_transect) {
@@ -335,10 +356,12 @@ FuncPlotBleach <- function(dat, yaxis_title, free_ymax) {
           strip.text.x = element_text(size = 11, angle = 90),
           strip.background=element_blank(),
           panel.border = element_blank(),
-          panel.grid = element_blank(),
+          # panel.grid = element_blank(),
           panel.spacing = unit(0.05, "lines"))
   })
-  
+  # saveRDS(plots_list, "plots_list.RDS")
+  # plots_page <- plotly::subplot(plots_list, titleX = TRUE, titleY = TRUE, shareY = TRUE, nrows = length(plots_list)) # <<<<<<<<<<< PICK UP FROM HERE. IT'S NOT WORKING.
+
   plots_page <- patchwork::wrap_plots(plots_list, ncol = 1) +
     patchwork::plot_annotation(
       title = "From Oct. 2005 to present, coral data with NA for 'Bleaching Code' are considered 'Unbleached' (UNBL)",
@@ -414,7 +437,7 @@ observeEvent(eventExpr = input$button_import, {
   withProgress(message = "Please be patient. Calculating something wonderful...", value = 0, {
     FuncCorals(filenam = input$filenam$datapath, sitesfilenam = input$sitesfilenam$datapath, diseasefilenam = input$diseasefilenam$datapath, colcountsfilenam = input$colcountsfilenam$datapath, out_prefix = input$out_prefix)
     
-    rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
+    rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, transect_plot = NULL, transect_table = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, relcover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
     
      showModal(modalDialog(
         title = "Done",
@@ -436,7 +459,7 @@ observeEvent(eventExpr = input$summaryfile, {
 
   rv <- sapply(names(out), FUN = function(i) {rv[[i]] <- out[[i]]}, simplify = FALSE)
   
-  rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
+  rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, transect_plot = NULL, transect_table = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, relcover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
 
   Sys.sleep(0.6)
  
@@ -965,9 +988,6 @@ output$out_transects_plotly <- plotly::renderPlotly({
 
   shiny::req(!is.null(rv$transect_counts_df), !is.null(rv_param_temp$sel_raw_dates))
  
-   #   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
-   # saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
-  
   p <- ggplot(rv_param_temp$transects_subdat, aes(x = SurvDate, y = PercCov)) +
     labs(x = NULL, y = NULL, title = paste0("% Cover per Transect for ", toupper(unique(rv_param_temp$transects_subdat$Category)), " at ", unique(rv_param_temp$transects_subdat$RSS))) +
     scale_x_date(date_labels = "%Y", breaks = scales::pretty_breaks()) +
@@ -975,9 +995,10 @@ output$out_transects_plotly <- plotly::renderPlotly({
     geom_line() +
     geom_vline(xintercept = as.numeric(as.Date(rv_param_temp$sel_raw_dates)), color = "red") +
     theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
     facet_wrap(vars(Site_Transect))
   
-  ggplotly(p) %>%
+  rv_param_temp$transect_plot <- ggplotly(p) %>%
     add_annotations( # y-axis title
       text = "% Cover of Coral",
       x = -0.04,
@@ -990,10 +1011,24 @@ output$out_transects_plotly <- plotly::renderPlotly({
       showarrow = FALSE,
       font = list(size = 16)
     ) %>%
+    add_annotations( # x-axis title
+      text = "Year",
+      x = 0.5,
+      y = -0.15,
+      yref = "paper",
+      xref = "paper",
+      xanchor = "middle",
+      yanchor = "top",
+      textangle = 0,
+      showarrow = FALSE,
+      font = list(size = 16)
+    ) %>%
   layout(
     margin = list(l = 75, r = 75,
-          b = 75, t = 75)
+          b = 90, t = 75)
   )
+  
+  rv_param_temp$transect_plot
   })
 
 tags$style("#out_transects_plotly{overflow-x:scroll;overflow-y:scroll}")
@@ -1024,7 +1059,7 @@ output$out_transects_tab <- DT::renderDT({
   num_transects <- length(unique(compare_dat$Transect))
   perc_incr <- round(100*(num_incr/num_transects), 1)
   
-  DT::datatable(
+  rv_param_temp$transect_table <- DT::datatable(
     compare_dat,
     filter = "top",
     class="compact stripe",
@@ -1044,6 +1079,8 @@ output$out_transects_tab <- DT::renderDT({
   ) %>% formatStyle("Change in %Cover",
                     backgroundColor  = styleInterval(c(0), c("orange", "lightblue"))
   )
+  
+  rv_param_temp$transect_table
 })
 
 tags$style("#out_transects_tab{overflow-x:scroll;overflow-y:scroll}")
@@ -1088,8 +1125,8 @@ wellPanel(
     
     RSS_choices <- rv$cover_CIs_df %>%
       dplyr::filter(if(input$RSS_active == TRUE) IsActive == 1 else TRUE) %>%
-      {if(input$sel_sitescale == "Site") dplyr::pull(., Site) else dplyr::pull(., ReportingSite)} %>% unique(.)
-    
+      {if(input$sel_sitescale == "Site") dplyr::pull(., Site) else dplyr::pull(., ReportingSite)} %>% unique(.) %>% na.omit(.)
+
     # Select (reporting) sites
     checkboxGroupInput("sel_showRSS", 
                        label = paste0("Show results for these ", if_else(input$sel_sitescale == "ReportingSite", "reporting sites", "sites")),
@@ -1097,6 +1134,7 @@ wellPanel(
                        selected = if(!is.null(input$sel_showRSS) & all(input$sel_showRSS %in% RSS_choices)) {input$sel_showRSS} else {RSS_choices}) # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
     }),
   
+  # selected = if(!is.null(input$sel_showRSS) & all(input$sel_showRSS %in% RSS_choices)) {input$sel_showRSS} else {RSS_choices}
   # Select numerator grouping scale for cover estimates
   renderUI({
     selectInput("sel_lev", 
@@ -1125,7 +1163,6 @@ wellPanel(
     
     rv_param_temp$avail_sublevs <- rv$cover_CIs_df %>%
       dplyr::filter(
-        # SiteScale == input$sel_sitescale,
         RSS %in% input$sel_showRSS,
       NumerGroup == input$sel_lev) %>%
       dplyr::filter(if(input$sel_lev != "Category" & !is.null(input$sel_categ)) Category == input$sel_categ else TRUE) %>%
@@ -1133,6 +1170,7 @@ wellPanel(
       pull(NumerLevel) %>%
       as.character() %>%
       unique() %>%
+      na.omit(.) %>%
       sort()
 
   checkboxGroupInput("sel_sublev", 
@@ -1220,28 +1258,9 @@ tags$div(renderText({
 * Confidence intervals are bootstrapped. For a NORMALLY distributed characteristic, the 68% CI is equal to the mean cover estimate +/- 1 standard error.
 
 ####
-```{r cover_legend}
-
-renderPlot({ # separate validation statements so they are checked in sequence
-  shiny::req(!is.null(rv_param_temp$cover_subdat), !is.null(rv_param_temp$cover_plot$legend))
-  if(any(!rv_param_temp$sel_showRSS %in% rv_param_temp$cover_subdat$RSS, !rv_param_temp$sel_sublev %in% rv_param_temp$cover_subdat$NumerLevel)) { # this if-statement forces the plot to be reset to blank when these conditions apply
-    
-    cover_legend <- ggplot(dat = data.frame()) + theme_minimal()
-  } else {
-    
-    cover_legend <-
-      rv_param_temp$cover_plot$legend # shared legend for dashboard
-  }
-  grid.arrange(cover_legend)
-}, height = 40)
-```
-
-####
 <div class="flex-container">
   <div class="flex-left">
 
-<center><h3>% Cover per Site</h3></center>
-<br>
 ```{r plot_PC}
 output$out_cover_plotly <- plotly::renderPlotly({
   
@@ -1251,11 +1270,17 @@ output$out_cover_plotly <- plotly::renderPlotly({
   shiny::validate(
     need(!is.null(rv_param_temp$cover_subdat), message = "From 'Data Filter Options' on the left, please select a grouping level and sublevel(s), then press the green 'UPDATE COVER SUMMARIES' button"))
   
+  #   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
+# saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
+  
   shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev), !is.null(input$free_ymax))
 
-rv_param_temp$cover_plot <- FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, set_ymax = input$set_PC_ymax, y_text = paste0("Mean % Cover (", input$sel_error, ")"), which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)
+rv_param_temp$cover_plot <- FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, set_ymax = input$set_PC_ymax, y_text = paste0("Mean % Cover (", input$sel_error, ")"), title_text = "% Cover per Site",which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)
 
-rv_param_temp$cover_plot$plot %>% hide_legend(.)
+rv_param_temp$cover_plot 
+# %>% layout(legend = list(orientation = 'h', xanchor = "left", yanchor = "bottom", y = 1.2, x = 0))
+
+
 })
 
 plotlyOutput("out_cover_plotly")
@@ -1264,8 +1289,6 @@ plotlyOutput("out_cover_plotly")
 </div>
 <div class="flex-right">
 
-<center><h3>Relative Cover per Site</h3></center>
-<br>
 ```{r plot_RC}
 output$out_RC_plotly <- plotly::renderPlotly({
   
@@ -1275,13 +1298,15 @@ output$out_RC_plotly <- plotly::renderPlotly({
   shiny::validate(
     need(!is.null(rv_param_temp$cover_subdat), message = "Relative cover is estimated when the grouping level is 'Functional Group' or 'Taxon' with at least one selected sublevel. Press the green 'UPDATE COVER SUMMARIES' button after selection."))
   
-  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_lev), !is.null(rv_param_temp$sel_sublev), !is.null(input$free_ymax))
+  shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_lev), !is.null(input$free_ymax))
   
   shiny::validate(
     need(rv_param_temp$sel_lev!="Category", message = "Relative cover is estimated only when the grouping level is 'Functional Group' or 'Taxon'")
   )
   
-  FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "CategoryCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, set_ymax = input$set_RC_ymax, y_text = paste0("Mean % Relative Cover (", input$sel_error, ")"), which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)$plot %>% hide_legend(.)
+  rv_param_temp$relcover_plot <- FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "CategoryCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, set_ymax = input$set_RC_ymax, y_text = paste0("Mean % Relative Cover (", input$sel_error, ")"), title_text = "Relative Cover per Site", which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)
+  
+  rv_param_temp$relcover_plot
 
 })
 
@@ -1430,7 +1455,7 @@ wellPanel(
    
     bleach_RSS_choices <- rv$bleach_CIs_df %>%
       dplyr::filter(if(input$bleach_RSS_active == TRUE) IsActive == 1 else TRUE) %>%
-      {if(input$sel_bleach_sitescale == "Site") dplyr::pull(., Site) else dplyr::pull(., ReportingSite)} %>% unique(.)
+      {if(input$sel_bleach_sitescale == "Site") dplyr::pull(., Site) else dplyr::pull(., ReportingSite)} %>% unique(.) %>% na.omit(.)
     
     # Select (reporting) sites
     checkboxGroupInput("sel_bleach_showRSS", 
@@ -1669,7 +1694,7 @@ wellPanel(
     
     disease_RSS_choices <- rv$disease_df %>%
       dplyr::filter(if(input$disease_RSS_active == TRUE) IsActive == 1 else TRUE) %>%
-      {if(input$sel_disease_sitescale == "Site") dplyr::pull(., Site) else dplyr::pull(., ReportingSite)} %>% unique(.)
+      {if(input$sel_disease_sitescale == "Site") dplyr::pull(., Site) else dplyr::pull(., ReportingSite)} %>% unique(.) %>% na.omit(.)
     
     # Select (reporting) sites
     checkboxGroupInput("sel_disease_showRSS", 
