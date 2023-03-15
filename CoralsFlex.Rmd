@@ -26,7 +26,7 @@ source("Corals.R")
 
 rv <- reactiveValues(raw_dat = NULL, map_dat = NULL, groups_df = NULL, warn_list = NULL, transect_counts_df = NULL, cover_CIs_df = NULL, bleach_CIs_df = NULL, disease_df = NULL, colcounts_df = NULL)
 
-rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, transect_plot = NULL, transect_table = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, relcover_plot = NULL, bleach_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
+rv_param_temp <- reactiveValues(cover_subdat = NULL, avail_sublevs = NULL, sel_showRSS = NULL, sel_bleach_showRSS = NULL, sel_lev = NULL, sel_sublev = NULL, avail_diseases = NULL, transects_subdat = NULL, transect_plot = NULL, transect_table = NULL, sel_raw_dates = NULL, bleach_subdat = NULL, disease_RSS = NULL, disease_transect = NULL, sel_disease_showRSS = NULL, cover_plot = NULL, relcover_plot = NULL, bleach_pc_plot = NULL, bleach_rc_plot = NULL, lesion_RSS = NULL, lesion_transect = NULL)
 
 tags$style("table {
            height: calc(100vh - 80px) !important;
@@ -313,7 +313,6 @@ FuncPlotPointLesion <- function(dat, metric, free_ymax, set_ymax, y_text, diseas
 }
 
 FuncPlotBleach <- function(dat, yaxis_title, free_ymax) {
-  # NOT interactive because with interactive subplots of facet plots, the y-axis was not showing in the correct location 
   # Function to stacked bar plots of site totals
   #
   # Args:
@@ -322,54 +321,120 @@ FuncPlotBleach <- function(dat, yaxis_title, free_ymax) {
   # Returns:
   #   Stacked bar plots
   # 
-  if(free_ymax == FALSE) {
+  if(free_ymax == FALSE) { # If one y-max for all plots, calculate what that should be
     ymax_bleach <- dat %>% select(RSS, SurvDate, EstimCov) %>% dplyr::group_by(RSS, SurvDate) %>% dplyr::mutate(TotCov = sum(EstimCov)) %>% pull(TotCov) %>% max(., na.rm = TRUE) %>% plyr::round_any(., 2.5, f = ceiling)
   } else {
       ymax_bleach <- NA
     }
   
-  yr_levels = min(dat$Year, na.rm = TRUE):max(dat$Year, na.rm = TRUE)
+  # yr_levels = min(dat$Year, na.rm = TRUE):max(dat$Year, na.rm = TRUE)
   plot_dat <- dat %>%
     dplyr::mutate(SurvDate = as.factor(SurvDate),
                   Year = as.factor(Year))
   
-  plots_list <- lapply(sort(unique(dat$RSS)), function(i) {
+  ylab_list <- subtitle_list <- plots_list <- list()
+ 
+  for(i in sort(unique(plot_dat$RSS))) {
+    plot_num <- which(sort(unique(plot_dat$RSS))==i)
     
-    p <- ggplot(subset(plot_dat, RSS == i), aes(x = SurvDate, y = EstimCov, fill = NumerLevel)) +
+    sub_dat <- subset(plot_dat, RSS == i)
+    yr_labels = paste0("  ", levels(sub_dat$Year), "  ")
+    names(yr_labels) <- levels(sub_dat$Year)
+
+    subtitle_list[[plot_num]] = list(
+      text = paste0("Site: ", i), 
+      x = 0.5,
+      xanchor = "middle",
+      xref = "paper",
+      y = 0,
+      yanchor = "top",
+      yref=paste0("y", plot_num),
+      showarrow = FALSE, 
+      font=list(size=18))
+    
+    ylab_list[[plot_num]] = list(
+      text = yaxis_title, 
+      # align = "left", 
+      valign = "center",
+      x = -0.065,
+      xanchor = "bottom",
+      xref = "paper",
+      # y = ifelse(free_ymax == FALSE, ymax_bleach/2, max(sub_dat$EstimCov, na.rm = TRUE)/2),
+      yanchor = "middle",
+      yref=paste0("y", plot_num),
+      showarrow = FALSE, 
+      textangle = -90,
+      font=list(size=17))
+    
+    p <- ggplot(sub_dat, aes(x = SurvDate, y = EstimCov, fill = NumerLevel)) +
     geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
-    scale_fill_manual(values = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), guide = "none") +
+    scale_fill_manual(name = NULL, values = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92")) +
     # scale_y_continuous(expand = c(0, 0)) +
-    labs(title = " ", subtitle = paste0("Coral Bleaching at Site:  ", i), y = yaxis_title) # adding blank title as hack to increase spacing between plots
+    labs(title = "   ", y = "", x = "")
     
       if(free_ymax == FALSE) {
     p <- p + ylim(0, ymax_bleach)
       }
     
-    p + theme_bw(base_size = 14) +
+    plots_list[[i]] <- p + theme_bw(base_size = 14) +
     facet_grid(.~Year, scales = "free_x", drop = FALSE, switch = "x") +
-    theme(legend.position = "none",
+    theme(legend.text = element_text(size = 12),
+          legend.title = element_text(size = 12),
           plot.subtitle = element_text(size = 18),
-          axis.text.x=element_blank(),
-          axis.title.x=element_blank(),
+          axis.text.x=element_blank(), # this is the survey date, not  the year
+          # axis.title.x=element_blank(),
           axis.ticks.x = element_blank(),
-          axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
+          # axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
           strip.text.x = element_text(size = 11, angle = 90),
           strip.background=element_blank(),
           panel.border = element_blank(),
           # panel.grid = element_blank(),
           panel.spacing = unit(0.05, "lines"))
-  })
-  # saveRDS(plots_list, "plots_list.RDS")
-  # plots_page <- plotly::subplot(plots_list, titleX = TRUE, titleY = TRUE, shareY = TRUE, nrows = length(plots_list)) # <<<<<<<<<<< PICK UP FROM HERE. IT'S NOT WORKING.
+}
+  
+  plotly_out <-
+     plotly::subplot( # this automatically converts to plotly
+      plots_list, # if I convert each with ggplotly() before subplot(), will mess up axes and not allow multiple bars per year
+      nrows = length(plots_list),
+      shareX = FALSE, # if set to FALSE, x-axis labels will overlap subplot title
+      shareY = FALSE,
+      titleX = TRUE,
+      titleY = TRUE,
+      which_layout = 1,
+      margin = c(0.01, 0.01, 0.15, 0.05) # left, right, top, bottom--this is margin around each SUBPLOT
+    ) %>%
+      layout(
+          margin = list(
+          t=100,
+          b=15,
+          l= 80,
+          r=40), 
+          height = length(plots_list) * 350 + 150
+          ) %>% # height here is deprecated, but having trouble getting reactive value in plotlyOutput
+    layout( # put legend at top of first plot
+      legend = list(
+        orientation = "h",
+        xanchor = "center",
+        x = 0.5,
+        yanchor = "bottom",
+        y = 1.15)) %>%
+  layout(
+    title = list(
+      text = paste0("Coral Bleaching as % Cover of Surveyed Site", "<br>", "<sup>", "Survey years are shown across top of each subplot; site name below each subplot", "</sup>"),
+      yref = "page",
+      yanchor = "bottom",
+      automargin = TRUE),
+    annotations = c(subtitle_list, ylab_list))
+  
+  # Get rid of duplicate legends
+  for (i in seq_along(plotly_out$x$data)) {
+    
+  # Is the layer the first entry of the group?
+  is_first <- plotly_out$x$data[[i]]$yaxis == "y"
 
-  plots_page <- patchwork::wrap_plots(plots_list, ncol = 1) +
-    patchwork::plot_annotation(
-      title = "From Oct. 2005 to present, coral data with NA for 'Bleaching Code' are considered 'Unbleached' (UNBL)",
-      theme = theme(
-        plot.title = element_text(size = 16)
-      ))
-
-    return(plots_page)
+  if (!is_first) plotly_out$x$data[[i]]$showlegend <- FALSE
+  }
+    return(plotly_out)
 }
 
 FuncPlotDisease <- function(dat, y_col, yaxis_title) {
@@ -383,7 +448,7 @@ FuncPlotDisease <- function(dat, y_col, yaxis_title) {
   #   Stacked bar plots
   # 
   
-  yr_levels = min(dat$Year, na.rm = TRUE):max(dat$Year, na.rm = TRUE)
+  # yr_levels = min(dat$Year, na.rm = TRUE):max(dat$Year, na.rm = TRUE)
   plot_dat <- dat %>%
     dplyr::mutate(SurvDate = as.factor(SurvDate),
                   Year = as.factor(Year))
@@ -552,7 +617,7 @@ observeEvent(eventExpr = input$button_update_bleach, {
 
   shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$sel_bleach_sitescale), !is.null(input$sel_bleach_showRSS), !is.null(input$sel_bleach_episodic))
   
-  rv_param_temp$sel_bleach_showRSS <- rv_param_temp$bleach_plot <- NULL
+  rv_param_temp$sel_bleach_showRSS <- rv_param_temp$bleach_pc_plot <- rv_param_temp$bleach_rc_plot <- NULL
   
   rv_param_temp$bleach_subdat <- rv$bleach_CIs_df %>%
     dplyr::filter(
@@ -564,6 +629,15 @@ observeEvent(eventExpr = input$button_update_bleach, {
     arrange(RSS, SurvDate, NumerLevel)
   
   rv_param_temp$sel_bleach_showRSS <- input$sel_bleach_showRSS # make sure user selection doesn't automatically update plot page height
+  
+  shiny::req(!is.null(input$bleach_RSS_active), !is.null(input$bleach_free_ymax), !is.null(rv_param_temp$bleach_subdat))
+  
+#   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
+# saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
+
+  rv_param_temp$bleach_pc_plot <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "TransectCount"), yaxis_title = "% Cover of Site", free_ymax = input$bleach_free_ymax)
+  
+  rv_param_temp$bleach_rc_plot <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "CategoryCount"), yaxis_title = "% Cover of Corals", free_ymax = TRUE)
 })
 ```
 
@@ -1270,9 +1344,6 @@ output$out_cover_plotly <- plotly::renderPlotly({
   shiny::validate(
     need(!is.null(rv_param_temp$cover_subdat), message = "From 'Data Filter Options' on the left, please select a grouping level and sublevel(s), then press the green 'UPDATE COVER SUMMARIES' button"))
   
-  #   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
-# saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
-  
   shiny::req(!is.null(input$sel_splitplot), !is.null(input$PC_blackwhite), !is.null(input$sel_error), !is.null(rv_param_temp$sel_showRSS), !is.null(rv_param_temp$sel_sublev), !is.null(input$free_ymax))
 
 rv_param_temp$cover_plot <- FuncPlotPointCI(dat = rv_param_temp$cover_subdat, denom = "TransectCount", sel_error = input$sel_error, sel_splitplot = input$sel_splitplot, free_ymax = input$free_ymax, set_ymax = input$set_PC_ymax, y_text = paste0("Mean % Cover (", input$sel_error, ")"), title_text = "% Cover per Site",which_showRSS = "cover", PC_blackwhite = input$PC_blackwhite)
@@ -1514,16 +1585,18 @@ renderPlot({
 <center><h3>Coral Bleaching as % Cover of Site</h3></center>
 <br>
 ```{r barplot_bleachPC}
-output$out_bleach_stackplot <- renderPlot({
+output$out_bleach_stackplot <- renderPlotly({
   
-  shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale), !is.null(input$bleach_free_ymax))
+  shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
+  shiny::validate(need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"))
+  
+  shiny::req(!is.null(rv_param_temp$sel_bleach_showRSS), !is.null(rv_param_temp$bleach_pc_plot))
 
-  FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "TransectCount"), yaxis_title = "% Cover of Site", free_ymax = input$bleach_free_ymax)
-},
-      height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_bleach_showRSS));length(rv_param_temp$sel_bleach_showRSS)*350}
-  )
+  rv_param_temp$bleach_pc_plot
+})
 
-plotOutput("out_bleach_stackplot")
+plotlyOutput("out_bleach_stackplot")
 ```
 
 </div>
@@ -1532,16 +1605,22 @@ plotOutput("out_bleach_stackplot")
 <center><h3>Coral Bleaching as % Cover of Corals</h3></center>
 <br>
 ```{r barplot_bleachRC}
-output$out_bleach_stackplot2 <- renderPlot({
-    
-    shiny::req(!is.null(rv$bleach_CIs_df), !is.null(input$bleach_RSS_active), !is.null(input$sel_bleach_episodic), !is.null(input$sel_bleach_sitescale))
+output$out_bleach_stackplot2 <- renderPlotly({
   
-  FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "CategoryCount"), yaxis_title = "% Cover of Corals", free_ymax = TRUE)
-},
-      height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_bleach_showRSS));length(rv_param_temp$sel_bleach_showRSS)*350}
-  )
+  shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
+  
+  shiny::validate(need(!is.null(rv_param_temp$bleach_subdat), message = "From 'Data Filter Options' on the line graphs page, please select site(s), then press the green 'UPDATE BLEACH SUMMARIES' button"))
+  
+  shiny::req(!is.null(rv_param_temp$sel_bleach_showRSS), !is.null(rv_param_temp$bleach_rc_plot))
 
-plotOutput("out_bleach_stackplot2")
+  rv_param_temp$bleach_rc_plot
+})
+      
+
+# htmltools::div(style = "display:inline-block", plotlyOutput("out_bleach_stackplot2", height = reactive({switch(is.null(rv_param_temp$sel_bleach_showRSS)+1, length(rv_param_temp$sel_bleach_showRSS) * 250 + 150, 200)})))
+
+ # plotlyOutput("out_bleach_stackplot2", height = reactive({switch(is.null(rv_param_temp$sel_bleach_showRSS)+1, length(rv_param_temp$sel_bleach_showRSS) * 250 + 150, 200)}))
+plotlyOutput("out_bleach_stackplot2")
 
 ```
 </div>
