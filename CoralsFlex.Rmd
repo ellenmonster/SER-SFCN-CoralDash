@@ -198,18 +198,14 @@ FuncPlotPointDisease <- function(dat, metric, free_ymax, set_ymax, y_text, disea
   
   if(disease_by_transect == TRUE) {
     p <- p + 
-      theme(legend.position = "top",
-            legend.text = element_text(size = 16),
-            legend.title = element_text(size = 16)
+      theme(legend.position = "right",
+            legend.text = element_text(size = 11),
+            legend.title = element_text(size = 11)
       )
-    disease_legend <- ggpubr::as_ggplot(cowplot::get_legend(p))
-            
-  } else {
-    disease_legend <- NA
   }
   
-  facet_ht <- 250 # 215
-  add_on_ht <- 150 # 150, this is for x-axis
+  facet_ht <- 280 
+  add_on_ht <- 124 
 
    
   page_ht <- length(unique(plot_dat$RSS)) * facet_ht + add_on_ht
@@ -220,15 +216,15 @@ FuncPlotPointDisease <- function(dat, metric, free_ymax, set_ymax, y_text, disea
   
   gp <- gp %>% layout(
     margin = list(
-      t=80,
-      b=70,
+      t=20,
+      b=30,
       l= 100,
-      r=15))
+      r=15)) 
   
   gp[['x']][['layout']][['annotations']][[2]][['x']] <- -0.12 # move y-axis title more to the left
   gp[['x']][['layout']][['annotations']][[1]][['y']] <- -0.02 # move x-axis title down more. This affects the x-axis title specified in ggplot
   
-  return_list <- list(plot = gp, legend = disease_legend)
+  return_list <- list(plot = gp)
   
   return(return_list)
 }
@@ -312,37 +308,40 @@ FuncPlotPointLesion <- function(dat, metric, free_ymax, set_ymax, y_text, diseas
   return(return_list)
 }
 
-FuncPlotBleach <- function(dat, yaxis_title, free_ymax) {
-  # Function to stacked bar plots of site totals
+FuncPlotStackedBar <- function(dat, y_col, yaxis_title, free_ymax, color_vec, fill_col, metric_name) {
+  # Function to stack bar plots
   #
   # Args:
-  #   dat:  The bleach data frame
+  #   dat:  The (bleach or disease) data frame
   #
   # Returns:
   #   Stacked bar plots
   # 
   if(free_ymax == FALSE) { # If one y-max for all plots, calculate what that should be
-    ymax_bleach <- dat %>% select(RSS, SurvDate, EstimCov) %>% dplyr::group_by(RSS, SurvDate) %>% dplyr::mutate(TotCov = sum(EstimCov)) %>% pull(TotCov) %>% max(., na.rm = TRUE) %>% plyr::round_any(., 2.5, f = ceiling)
+    ymax <- dat %>% select(RSS, SurvDate, !!as.name(y_col)) %>% dplyr::group_by(RSS, SurvDate) %>% dplyr::mutate(TotY = sum(!!as.name(y_col))) %>% pull(TotY) %>% max(., na.rm = TRUE) %>% plyr::round_any(., 2.5, f = ceiling)
   } else {
-      ymax_bleach <- NA
-    }
-  
-  # yr_levels = min(dat$Year, na.rm = TRUE):max(dat$Year, na.rm = TRUE)
+    ymax <- NA
+  }
+  # 
+  # template <- expand(dat, RSS, Year, NumerLevel)
+  # plot_dat <- full_join(template, dat)
+  # plot_dat$EstimCov[is.na(plot_dat$EstimCov)] <- 0
+
   plot_dat <- dat %>%
     dplyr::mutate(SurvDate = as.factor(SurvDate),
-                  Year = as.factor(Year))
+                  Year = as.factor(Year)) # this forces every plot to show every year
   
   ylab_list <- subtitle_list <- plots_list <- list()
- 
+  
   for(i in sort(unique(plot_dat$RSS))) {
     plot_num <- which(sort(unique(plot_dat$RSS))==i)
     
     sub_dat <- subset(plot_dat, RSS == i)
-    yr_labels = paste0("  ", levels(sub_dat$Year), "  ")
+    yr_labels = paste0("  ", levels(sub_dat$Year), "  ") # add space around year labels
     names(yr_labels) <- levels(sub_dat$Year)
-
+    
     subtitle_list[[plot_num]] = list(
-      text = paste0("Site: ", i), 
+      text = paste0("Coral ", metric_name, " at Site: ", i), 
       x = 0.5,
       xanchor = "middle",
       xref = "paper",
@@ -354,131 +353,82 @@ FuncPlotBleach <- function(dat, yaxis_title, free_ymax) {
     
     ylab_list[[plot_num]] = list(
       text = yaxis_title, 
-      # align = "left", 
       valign = "center",
-      x = -0.065,
+      x = -0.2,
       xanchor = "bottom",
       xref = "paper",
-      # y = ifelse(free_ymax == FALSE, ymax_bleach/2, max(sub_dat$EstimCov, na.rm = TRUE)/2),
       yanchor = "middle",
       yref=paste0("y", plot_num),
       showarrow = FALSE, 
       textangle = -90,
       font=list(size=17))
     
-    p <- ggplot(sub_dat, aes(x = SurvDate, y = EstimCov, fill = NumerLevel)) +
-    geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
-    scale_fill_manual(name = NULL, values = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92")) +
-    # scale_y_continuous(expand = c(0, 0)) +
-    labs(title = "   ", y = "", x = "")
+    p <- ggplot(sub_dat, aes_string(x = "SurvDate", y = y_col, fill = fill_col)) +
+      geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE), na.rm = FALSE) +
+      scale_fill_manual(name = NULL, values = color_vec) +
+      labs(title = "   ", y = "", x = "")
     
-      if(free_ymax == FALSE) {
-    p <- p + ylim(0, ymax_bleach)
-      }
+    if(free_ymax == FALSE) {
+      p <- p + ylim(0, ymax)
+    } else {
+      p <- p + scale_y_continuous(expand = c(0, 0))
+    }
     
     plots_list[[i]] <- p + theme_bw(base_size = 14) +
-    facet_grid(.~Year, scales = "free_x", drop = FALSE, switch = "x") +
-    theme(legend.text = element_text(size = 12),
-          legend.title = element_text(size = 12),
-          plot.subtitle = element_text(size = 18),
-          axis.text.x=element_blank(), # this is the survey date, not  the year
-          # axis.title.x=element_blank(),
-          axis.ticks.x = element_blank(),
-          # axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
-          strip.text.x = element_text(size = 11, angle = 90),
-          strip.background=element_blank(),
-          panel.border = element_blank(),
-          # panel.grid = element_blank(),
-          panel.spacing = unit(0.05, "lines"))
-}
+      facet_grid(.~Year, scales = "free_x", drop = FALSE, switch = "x") +
+      theme(legend.text = element_text(size = 12),
+            legend.title = element_text(size = 12),
+            axis.text.x=element_blank(),
+            axis.title.x=element_blank(),
+            axis.ticks.x = element_blank(),
+            strip.text.x = element_text(size = 11, angle = 90),
+            strip.background=element_blank(),
+            panel.border = element_blank(),
+            panel.grid = element_blank(),
+            panel.spacing = unit(0.05, "lines"))
+    
+  }
   
   plotly_out <-
-     plotly::subplot( # this automatically converts to plotly
+    plotly::subplot( # this automatically converts to plotly
       plots_list, # if I convert each with ggplotly() before subplot(), will mess up axes and not allow multiple bars per year
       nrows = length(plots_list),
       shareX = FALSE, # if set to FALSE, x-axis labels will overlap subplot title
       shareY = FALSE,
       titleX = TRUE,
       titleY = TRUE,
-      which_layout = 1,
-      margin = c(0.01, 0.01, 0.15, 0.05) # left, right, top, bottom--this is margin around each SUBPLOT
-    ) %>%
-      layout(
-          margin = list(
-          t=100,
-          b=15,
-          l= 80,
-          r=40), 
-          height = length(plots_list) * 350 + 150
-          ) %>% # height here is deprecated, but having trouble getting reactive value in plotlyOutput
+      # which_layout = 1,
+      margin = c(0, 0, 0.18/length(plots_list), 0.18/length(plots_list))) %>%
+    layout(
+      margin = list( # this is the page margin
+        t=20,
+        b=30,
+        l= 100,
+        r=20),
+      height = length(plots_list) * 280 + 64) %>% # height here is deprecated, but having trouble getting reactive value in plotlyOutput
     layout( # put legend at top of first plot
       legend = list(
         orientation = "h",
         xanchor = "center",
         x = 0.5,
         yanchor = "bottom",
-        y = 1.15)) %>%
-  layout(
-    title = list(
-      text = paste0("Coral Bleaching as % Cover of Surveyed Site", "<br>", "<sup>", "Survey years are shown across top of each subplot; site name below each subplot", "</sup>"),
-      yref = "page",
-      yanchor = "bottom",
-      automargin = TRUE),
-    annotations = c(subtitle_list, ylab_list))
+        y = 1 + .18/length(plots_list))
+      ) %>%
+    layout(
+      annotations = c(subtitle_list, ylab_list)
+    )
   
   # Get rid of duplicate legends
   for (i in seq_along(plotly_out$x$data)) {
     
-  # Is the layer the first entry of the group?
-  is_first <- plotly_out$x$data[[i]]$yaxis == "y"
-
-  if (!is_first) plotly_out$x$data[[i]]$showlegend <- FALSE
-  }
-    return(plotly_out)
-}
-
-FuncPlotDisease <- function(dat, y_col, yaxis_title) {
-  # NOT interactive because with interactive subplots of facet plots, the y-axis was not showing in the correct location 
-  # Function to stacked bar plots of site totals
-  #
-  # Args:
-  #   dat:  The bleach data frame
-  #
-  # Returns:
-  #   Stacked bar plots
-  # 
-  
-  # yr_levels = min(dat$Year, na.rm = TRUE):max(dat$Year, na.rm = TRUE)
-  plot_dat <- dat %>%
-    dplyr::mutate(SurvDate = as.factor(SurvDate),
-                  Year = as.factor(Year))
-  
-  plots_list <- lapply(sort(unique(dat$RSS)), function(i) {
+    # Is the layer the first entry of the group?
+    is_first <- plotly_out$x$data[[i]]$yaxis == "y"
     
-    ggplot(subset(plot_dat, RSS == i), aes_string(x = "SurvDate", y = y_col, fill = "DiseaseStatus")) +
-      geom_col(colour="black", size = 0.1, position = position_stack(reverse = TRUE)) +
-      scale_fill_manual(values = c("Diseased" = "red", "NotDiseased" = "black"), guide = "none") +
-    scale_y_continuous(expand = c(0, 0)) +
-    labs(title = " ", subtitle = paste0("Coral Disease at Site:  ", i), y = yaxis_title) +
-    theme_bw(base_size = 14) +
-    facet_grid(. ~ Year, scales = "free_x", drop = FALSE, switch = "x") +
-    theme(legend.position = "none",
-          plot.subtitle = element_text(size = 18),
-          axis.text.x=element_blank(),
-          axis.title.x=element_blank(),
-          axis.ticks.x = element_blank(),
-          axis.title.y = element_text(margin = margin(t = 0, r = 15, b = 0, l = 0)),
-          strip.text.x = element_text(size = 11, angle = 90),
-          strip.background=element_blank(),
-          panel.border = element_blank(),
-          panel.grid = element_blank(),
-          panel.spacing = unit(-0.05, "lines"))
-    })
-  
-  plots_page <- patchwork::wrap_plots(plots_list, ncol = 1)
-  
-  return(plots_page)
+    if (!is_first) plotly_out$x$data[[i]]$showlegend <- FALSE
+  }
+  return(plotly_out)
 }
+
 ```
 
 ```{r action_button_import_new_data}
@@ -631,13 +581,17 @@ observeEvent(eventExpr = input$button_update_bleach, {
   rv_param_temp$sel_bleach_showRSS <- input$sel_bleach_showRSS # make sure user selection doesn't automatically update plot page height
   
   shiny::req(!is.null(input$bleach_RSS_active), !is.null(input$bleach_free_ymax), !is.null(rv_param_temp$bleach_subdat))
-  
-#   saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
-# saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
 
-  rv_param_temp$bleach_pc_plot <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "TransectCount"), yaxis_title = "% Cover of Site", free_ymax = input$bleach_free_ymax)
+    saveRDS(isolate(reactiveValuesToList(rv_param_temp)), paste0("temp_rv_param_temp.RDS"))
+saveRDS(isolate(reactiveValuesToList(input)), paste0("temp_input.RDS"))
+
+    rv_param_temp$bleach_pc_plot <- FuncPlotStackedBar(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "TransectCount"), yaxis_title = "% Cover of Site", free_ymax = input$bleach_free_ymax, color_vec = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), y_col = "EstimCov", fill_col = "NumerLevel", metric_name = "Bleaching")
   
-  rv_param_temp$bleach_rc_plot <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "CategoryCount"), yaxis_title = "% Cover of Corals", free_ymax = TRUE)
+  rv_param_temp$bleach_rc_plot <- FuncPlotStackedBar(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "CategoryCount"), yaxis_title = "% Cover of Corals", free_ymax = TRUE, color_vec = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), y_col = "EstimCov", fill_col = "NumerLevel", metric_name = "Bleaching")
+  
+#   rv_param_temp$bleach_pc_plot <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "TransectCount"), yaxis_title = "% Cover of Site", free_ymax = input$bleach_free_ymax)
+#   
+#   rv_param_temp$bleach_rc_plot <- FuncPlotBleach(dat = subset(rv_param_temp$bleach_subdat, DenomGroup == "CategoryCount"), yaxis_title = "% Cover of Corals", free_ymax = TRUE)
 })
 ```
 
@@ -1130,7 +1084,7 @@ output$out_transects_tab <- DT::renderDT({
   
   shiny::req(!is.null(compare_dat))
   num_incr <- sum(compare_dat$`Change in %Cover` > 0, na.rm = TRUE) 
-  num_transects <- length(unique(compare_dat$Transect))
+  num_transects <- nrow(compare_dat) # May include NA's
   perc_incr <- round(100*(num_incr/num_transects), 1)
   
   rv_param_temp$transect_table <- DT::datatable(
@@ -1535,17 +1489,12 @@ wellPanel(
                        selected = if(!is.null(input$sel_bleach_showRSS) & all(input$sel_bleach_showRSS %in% bleach_RSS_choices)) {input$sel_bleach_showRSS} else {bleach_RSS_choices}) # if selections already made and they are a subset of RSS_choices, then use those selections; otherwise, use RSS_choices as default
   }),
   
+  checkboxInput("bleach_free_ymax", label = "Allow y-axes scales to vary among `% cover of site` plots", value = TRUE),
+  
   br(),
   
   actionButton("button_update_bleach", "UPDATE BLEACH SUMMARIES", class = "green-action-button")
 ) # end of 'wp_bleach_criteria'
-```
-
-```{r input_bleach_format}
-
-h4("Figure Format Options (plots update immediately)")
-
-checkboxInput("bleach_free_ymax", label = "Allow y-axes scales to vary among `% cover of site` plots", value = TRUE)
 ```
 
 % Bleach and Relative Bleach per Site
@@ -1553,7 +1502,7 @@ checkboxInput("bleach_free_ymax", label = "Allow y-axes scales to vary among `% 
 #### <font size="3">**These stacked bar plots show % cover by bleach level (left-side panel) and relative % cover by bleach level (right-side panel) for each selected site and category/functional group/taxon level**</font>
 
 <span style="font-size:18px; color:red;">
-    STACKED BAR PLOTS ARE SLOW TO DRAW - PLEASE BE PATIENT 
+    INTERACTIVE STACKED BAR PLOTS ARE PAINFULLY SLOW TO DRAW - PLEASE BE PATIENT 
 </span>
 
 * % cover is calculated as # of survey points in that level in that transect, divided by the adjusted number of survey points in the transect (for that survey event). The AVERAGE of the transect % covers for that (reporting) site-survey event is shown by the bar height for that bleach level.
@@ -1561,28 +1510,11 @@ checkboxInput("bleach_free_ymax", label = "Allow y-axes scales to vary among `% 
 * Relative % cover is calculated as # of survey points in that coral bleaching level, divided by # of survey points classified as CORAL. Totals for numerator and denominator are summed across all surveyed transects for that (reporting) site-survey event.
 
 ####
-```{r bleach_legend}
-renderPlot({
-  shiny::req(!is.null(rv$bleach_CIs_df), !is.null(rv_param_temp$bleach_subdat))
-  bleach_barplot_legend <-
-    ggpubr::as_ggplot(cowplot::get_legend(
-  ggplot(data.frame(x=1:6, y = 1:6, BleachLevel = c("NoData", "UNBL", "BL1", "BL2", "BL3", "BL4")), aes(x = x, y = y, fill = BleachLevel)) +
-    geom_col() + 
-    scale_fill_manual(values = c("NoData" = "orange", "UNBL" = "gray25", "BL1" = "gray45", "BL2" = "gray55", "BL3" = "gray75", "BL4" = "gray92"), guide = guide_legend(override.aes = list(size=1.25))) + 
-    theme_bw(base_size = 12) +
-    theme(legend.position = "top",
-          legend.text = element_text(size = 16),
-          legend.title = element_text(size = 16))
-  ))
-  grid.arrange(bleach_barplot_legend)
-}, height = 40)
-```
-
-####
 <div class="flex-container">
 <div class="flex-left">
   
 <center><h3>Coral Bleaching as % Cover of Site</h3></center>
+<center>Survey years are shown across top of each subplot; site name below each subplot</center>
 <br>
 ```{r barplot_bleachPC}
 output$out_bleach_stackplot <- renderPlotly({
@@ -1603,6 +1535,7 @@ plotlyOutput("out_bleach_stackplot")
 <div class="flex-right">
   
 <center><h3>Coral Bleaching as % Cover of Corals</h3></center>
+<center>Survey years are shown across top of each subplot; site name below each subplot</center>
 <br>
 ```{r barplot_bleachRC}
 output$out_bleach_stackplot2 <- renderPlotly({
@@ -1616,10 +1549,6 @@ output$out_bleach_stackplot2 <- renderPlotly({
   rv_param_temp$bleach_rc_plot
 })
       
-
-# htmltools::div(style = "display:inline-block", plotlyOutput("out_bleach_stackplot2", height = reactive({switch(is.null(rv_param_temp$sel_bleach_showRSS)+1, length(rv_param_temp$sel_bleach_showRSS) * 250 + 150, 200)})))
-
- # plotlyOutput("out_bleach_stackplot2", height = reactive({switch(is.null(rv_param_temp$sel_bleach_showRSS)+1, length(rv_param_temp$sel_bleach_showRSS) * 250 + 150, 200)}))
 plotlyOutput("out_bleach_stackplot2")
 
 ```
@@ -1837,7 +1766,7 @@ Disease Counts
 #### <font size="3">**These figures show count of diseased colonies, summed over selected diseases.**</font>
 
 <span style="font-size:18px; color:red;">
-    STACKED BAR PLOTS ARE SLOW TO DRAW - PLEASE BE PATIENT 
+    INTERACTIVE STACKED BAR PLOTS ARE PAINFULLY SLOW TO DRAW - PLEASE BE PATIENT 
 </span>
 
 * Disease counts are summaries of the survey data collected from sample transects, without inference to the study site (therefore, no estimates of statistical error).
@@ -1863,7 +1792,7 @@ output$out_disease_count_plotly <- plotly::renderPlotly({
   
   rv_param_temp$disease_count_plot <- FuncPlotPointDisease(dat = switch((input$disease_by_transect == TRUE)+1, rv_param_temp$disease_RSS, rv_param_temp$disease_transect), metric = switch((input$disease_by_transect == TRUE)+1, "SiteDiseased", "TransectDiseased"), free_ymax = input$disease_free_ymax, set_ymax = input$set_disease_count_ymax, y_text = "Number of Diseased Coral Colonies Detected", disease_by_transect = input$disease_by_transect)
   
-  rv_param_temp$disease_count_plot$plot %>% hide_legend(.)
+  rv_param_temp$disease_count_plot$plot
 })
 plotlyOutput("out_disease_count_plotly")
 ```
@@ -1872,10 +1801,11 @@ plotlyOutput("out_disease_count_plotly")
 <div class="flex-right">
   
 <center><h3>Number of Diseased (red) and Non-Diseased (black) Coral Colonies Along Transects</h3></center>
+  <center>Survey years are shown across top of each subplot; site name below each subplot</center>
 <br>
 
 ```{r barplot_disease_count}
-output$out_disease_count_stackplot <- renderPlot({
+output$out_disease_count_stackplot <- renderPlotly({
   
   shiny::validate(
     need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"))
@@ -1891,13 +1821,11 @@ output$out_disease_count_stackplot <- renderPlot({
     tidyr::pivot_longer(cols = c("Diseased", "NotDiseased"), names_to = "DiseaseStatus", values_to = "NumColonies")
   
   shiny::req(!is.null(disease_counts_dat))
-  
-  FuncPlotDisease(dat = disease_counts_dat, y_col = "NumColonies", yaxis_title = "Number of Coral Colonies")
-},
-  height = function(){shiny::validate(need(!is.null(rv$raw_dat), message = "Please import new data or load an existing summary RDS file"));shiny::validate(need(!is.null(rv_param_temp$disease_RSS) & !is.null(rv_param_temp$disease_transect), message = "From 'Data Filter Options' on the line graphs page, please select site(s) and disease(s), then press the green 'UPDATE DISEASE SUMMARIES' button"));shiny::req(!is.null(rv_param_temp$sel_disease_showRSS));150+length(rv_param_temp$sel_disease_showRSS)*250}
-)
 
-plotOutput("out_disease_count_stackplot")
+  FuncPlotStackedBar(dat = disease_counts_dat, y_col = "NumColonies", yaxis_title = "Number of Coral Colonies", free_ymax = TRUE, color_vec = c("Diseased" = "red", "NotDiseased" = "black"), fill_col = "DiseaseStatus", metric_name = "Disease")
+})
+
+plotlyOutput("out_disease_count_stackplot")
 ```
 
 </div>
